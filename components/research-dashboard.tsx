@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -8,6 +9,8 @@ import {
   CheckCircle2,
   CircleDashed,
   Download,
+  Eye,
+  EyeOff,
   FileSearch,
   Scale,
 } from 'lucide-react';
@@ -31,8 +34,13 @@ function resultStyle(result: string) {
 }
 
 export function ResearchDashboard({ subject }: { subject: string }) {
+  const [shareMode, setShareMode] = useState(true);
   const score = demoChecks.reduce((sum, check) => sum + check.score, 0);
   const maxScore = demoChecks.reduce((sum, check) => sum + check.max, 0);
+  const displaySubject =
+    shareMode && subject.startsWith('财报文件')
+      ? '已上传财报（源文件名已隐藏）'
+      : subject;
 
   return (
     <section
@@ -54,7 +62,7 @@ export function ResearchDashboard({ subject }: { subject: string }) {
               </Badge>
             </div>
             <p className="text-xs font-semibold tracking-[0.16em] text-[#7d6644]">
-              RESEARCH FILE · {subject}
+              RESEARCH FILE · {displaySubject}
             </p>
             <h2 className="mt-2 font-serif text-3xl tracking-[-0.02em] sm:text-4xl">
               林奇规则核查报告
@@ -63,13 +71,27 @@ export function ResearchDashboard({ subject }: { subject: string }) {
               以下数值是用于验证评分流程的演示数据，不是对该股票的实时判断。正式数据接入后，表格结构与出处链保持不变。
             </p>
           </div>
-          <Button
-            variant="outline"
-            className="border-[#9b825e]/45 bg-[#fffdf8]"
-            onClick={() => window.print()}
-          >
-            <Download className="size-4" /> 导出 / 打印报告
-          </Button>
+          <div className="flex flex-wrap gap-2" data-no-print>
+            <Button
+              variant="outline"
+              className="border-[#9b825e]/45 bg-[#fffdf8]"
+              onClick={() => setShareMode((current) => !current)}
+            >
+              {shareMode ? (
+                <EyeOff className="size-4" />
+              ) : (
+                <Eye className="size-4" />
+              )}
+              {shareMode ? '分享版：已隐藏文件名' : '底稿版：保留文件名'}
+            </Button>
+            <Button
+              variant="outline"
+              className="border-[#9b825e]/45 bg-[#fffdf8]"
+              onClick={() => window.print()}
+            >
+              <Download className="size-4" /> 导出 / 打印报告
+            </Button>
+          </div>
         </div>
 
         <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">

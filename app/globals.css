@@ -109,12 +109,29 @@
 
 @media print {
   header,
-  #method {
+  #top,
+  #privacy,
+  #method,
+  [data-no-print] {
     display: none;
   }
 
-  .paper-grid {
+  body,
+  #report {
     border: 0;
     background: white;
+  }
+
+  #report {
+    padding: 0;
+  }
+
+  #report > div {
+    max-width: none;
+  }
+
+  @page {
+    margin: 12mm;
+    size: A4 portrait;
   }
 }

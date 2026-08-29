@@ -61,7 +61,7 @@ export default function Home() {
               彼得林奇投资模型
             </span>
             <Badge className="bg-[#d9b978] text-[#132422] hover:bg-[#d9b978]">
-              MVP
+              本地版
             </Badge>
           </a>
           <nav
@@ -74,8 +74,8 @@ export default function Home() {
             <a className="transition-colors hover:text-white" href="#method">
               方法护栏
             </a>
-            <a className="transition-colors hover:text-white" href="#sources">
-              数据来源
+            <a className="transition-colors hover:text-white" href="#privacy">
+              本地隐私
             </a>
           </nav>
         </div>
@@ -220,9 +220,12 @@ export default function Home() {
                       className="mt-3 h-10 w-full bg-[#163b37] text-[#fff9eb] hover:bg-[#235149]"
                       onClick={() => openDemo(`财报文件 ${fileName}`)}
                     >
-                      建立研究档案 <ArrowRight className="size-4" />
+                      在本地建立档案 <ArrowRight className="size-4" />
                     </Button>
                   )}
+                  <p className="mt-3 text-center text-[11px] text-muted-foreground">
+                    当前版本不会把所选文件上传到服务器
+                  </p>
                 </TabsContent>
               </Tabs>
             </CardContent>
@@ -231,6 +234,31 @@ export default function Home() {
       </section>
 
       {analysisSubject && <ResearchDashboard subject={analysisSubject} />}
+
+      <section
+        id="privacy"
+        className="border-b border-border bg-[#102e2b] px-5 py-7 text-white lg:px-8"
+      >
+        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-4 sm:flex-row sm:items-center">
+          <div className="flex items-start gap-3">
+            <ShieldCheck className="mt-0.5 size-5 shrink-0 text-[#e3c47f]" />
+            <div>
+              <h2 className="font-serif text-lg">
+                主程序留在本机，报告按需分享
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-white/60">
+                原始财报、评分底稿和密钥默认不离开你的电脑；导出时可隐藏源文件名，只保留规则、出处和结论。
+              </p>
+            </div>
+          </div>
+          <Badge
+            variant="outline"
+            className="shrink-0 border-white/20 text-white/75"
+          >
+            LOCAL FIRST
+          </Badge>
+        </div>
+      </section>
 
       <section
         id="method"
