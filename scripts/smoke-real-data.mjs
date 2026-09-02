@@ -89,8 +89,16 @@ async function main() {
   if (!fundamentals.analysis || typeof fundamentals.analysis !== 'object') {
     fail('fundamentals analysis 为空');
   }
+  if (fundamentals?.extraction?.requestedReports > 11) {
+    fail(
+      `fundamentals 下载报告过多：requestedReports=${fundamentals.extraction.requestedReports}（最多 11）`,
+    );
+  }
+  if (fundamentals?.extraction?.complete !== true) {
+    fail('fundamentals 抽取结果不完整');
+  }
   console.log(
-    `✓ 600519 基本面：${annual.length} 年度、${quarterly.length} 季度，analysis 已生成`,
+    `✓ 600519 基本面：${annual.length} 年度、${quarterly.length} 季度，解析 ${fundamentals.extraction.requestedReports} 份报告，analysis 已生成`,
   );
   console.log('真实数据冒烟测试通过');
 }

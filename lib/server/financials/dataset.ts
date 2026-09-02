@@ -78,13 +78,40 @@ function selectAnnualPairs(reports: OfficialFiling[]) {
 }
 
 function selectInterimReports(lookup: OfficialLookup) {
-  const allowed =
-    lookup.company.market === 'HK'
-      ? new Set(['half_year'])
-      : new Set(['q1', 'half_year', 'q3']);
-  return lookup.reports
-    .filter((report) => allowed.has(report.reportKind) && report.fiscalYear)
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const reports = lookup.reports
+    .filter(
+      (report) =>
+        report.fiscalYear &&
+        (lookup.company.market === 'HK'
+          ? report.reportKind === 'half_year'
+          : ['q1', 'half_year', 'q3'].includes(report.reportKind)),
+    )
+    .sort((a, b) => (b.fiscalYear ?? 0) - (a.fiscalYear ?? 0));
+
+  if (lookup.company.market === 'A_SHARE') {
+    return ['q1', 'half_year', 'q3'].flatMap((reportKind) => {
+      const coveredYears = new Set<number>();
+      return reports
+        .filter((report) => report.reportKind === reportKind)
+        .filter((report) => {
+          const year = report.fiscalYear as number;
+          if (coveredYears.has(year) || coveredYears.has(year - 1))
+            return false;
+          coveredYears.add(year);
+          coveredYears.add(year - 1);
+          return coveredYears.size <= 4;
+        });
+    });
+  }
+
+  const coveredYears = new Set<number>();
+  return reports.filter((report) => {
+    const year = report.fiscalYear as number;
+    if (coveredYears.has(year) || coveredYears.has(year - 1)) return false;
+    coveredYears.add(year);
+    coveredYears.add(year - 1);
+    return coveredYears.size <= 10;
+  });
 }
 
 async function sha256(bytes: Uint8Array) {
@@ -361,7 +388,7 @@ export async function buildAnnualDataset(
   const selected = [...annualReports, ...interimReports];
   const downloads = await downloadReports(
     selected,
-    lookup.company.market === 'HK' ? 1 : 2,
+    lookup.company.market === 'HK' ? 5 : 2,
   );
   const annualPoints = new Map<string, MetricPoint>();
   const interimPoints = new Map<string, MetricPoint>();
@@ -396,9 +423,10 @@ export async function buildAnnualDataset(
             annualPoints.set(point.period, point);
         }
       } else {
-        const current = extraction.points.at(-1);
-        if (current && hasFinancialData(current))
-          interimPoints.set(current.period, current);
+        for (const point of extraction.points.filter(hasFinancialData)) {
+          if (!interimPoints.has(point.period))
+            interimPoints.set(point.period, point);
+        }
       }
       warnings.push(
         ...extraction.warnings.map(

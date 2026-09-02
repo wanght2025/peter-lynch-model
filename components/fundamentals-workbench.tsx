@@ -347,7 +347,11 @@ async function readApiResponse<T>(response: Response, fallback: string) {
   try {
     body = JSON.parse(rawBody) as T & { error?: string };
   } catch {
-    throw new Error(response.ok ? '服务返回格式无法读取' : fallback);
+    throw new Error(
+      response.ok
+        ? '服务返回格式无法读取'
+        : `${fallback}（HTTP ${response.status}，服务未返回可读取的错误详情）`,
+    );
   }
   if (!response.ok) throw new Error(body.error || fallback);
   return body;

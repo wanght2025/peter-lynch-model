@@ -380,18 +380,80 @@ function reportPeriods(filing: OfficialFiling) {
   return { current: String(year), previous: String(year - 1) };
 }
 
+const STATEMENT_OUTLINE_HEADINGS = [
+  /合并利润表/,
+  /綜合收益表/,
+  /Consolidated (?:Income Statement|Statement of Profit or Loss)/i,
+  /合并资产负债表/,
+  /綜合財務狀況表/,
+  /Consolidated Statement of Financial Position/i,
+  /合并现金流量表/,
+  /綜合現金流量表/,
+  /Consolidated Statement of Cash Flows/i,
+];
+
+async function pageText(
+  pdf: Awaited<ReturnType<typeof getDocumentProxy>>,
+  pageNumber: number,
+) {
+  const content = await (await pdf.getPage(pageNumber)).getTextContent();
+  return content.items
+    .filter((item) => 'str' in item)
+    .map((item) => ('str' in item ? item.str + (item.hasEOL ? '\n' : '') : ''))
+    .join('');
+}
+
+async function outlinedStatementPages(
+  pdf: Awaited<ReturnType<typeof getDocumentProxy>>,
+) {
+  const outline = await pdf.getOutline();
+  if (!outline?.length) return [];
+  const items = outline.flatMap(function flatten(item): typeof outline {
+    return [item, ...(item.items?.flatMap(flatten) ?? [])];
+  });
+  const starts: number[] = [];
+  for (const item of items) {
+    if (!STATEMENT_OUTLINE_HEADINGS.some((pattern) => pattern.test(item.title)))
+      continue;
+    const destination =
+      typeof item.dest === 'string'
+        ? await pdf.getDestination(item.dest)
+        : item.dest;
+    const pageRef = destination?.[0];
+    if (!pageRef || typeof pageRef === 'number') continue;
+    starts.push((await pdf.getPageIndex(pageRef)) + 1);
+  }
+  if (starts.length < 3) return [];
+  const pageNumbers = [
+    ...new Set(starts.flatMap((start) => [start, start + 1, start + 2])),
+  ]
+    .filter((pageNumber) => pageNumber <= pdf.numPages)
+    .sort((a, b) => a - b);
+  const texts = await Promise.all(
+    pageNumbers.map((pageNumber) => pageText(pdf, pageNumber)),
+  );
+  return texts.map((text, index) => ({
+    number: pageNumbers[index],
+    text,
+    lines: text.split(/\r?\n/).map(cleanLine).filter(Boolean),
+  }));
+}
+
 export async function extractFinancialReport(
   bytes: Uint8Array,
   filing: OfficialFiling,
 ): Promise<FinancialReportExtraction> {
   if (!filing.fiscalYear) throw new Error('定期报告缺少财政年度');
   const pdf = await getDocumentProxy(bytes);
-  const extracted = await extractText(pdf);
-  const pages = extracted.text.map((text, index) => ({
-    number: index + 1,
-    text,
-    lines: text.split(/\r?\n/).map(cleanLine).filter(Boolean),
-  }));
+  let pages = await outlinedStatementPages(pdf);
+  if (!pages.length) {
+    const extracted = await extractText(pdf);
+    pages = extracted.text.map((text, index) => ({
+      number: index + 1,
+      text,
+      lines: text.split(/\r?\n/).map(cleanLine).filter(Boolean),
+    }));
+  }
 
   const incomeStart = findStartPage(
     pages,
