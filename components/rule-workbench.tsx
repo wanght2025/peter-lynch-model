@@ -135,7 +135,7 @@ function metricExplanation(rule: LynchRuleCandidate) {
     return `程序读取：${evidence}。只判断原文明说的数字或方向，不自己增加门槛。`;
   }
   if (rule.automation === 'human') {
-    return `需要查看：${evidence}。AI可以帮你找证据和整理文字，但不能替你做最终判断。`;
+    return `需要查看：${evidence}。补充分析可以整理证据，但最终判断需要人工确认。`;
   }
   return `这条不转成计算指标。需要保留的资料：${evidence}。`;
 }
@@ -529,10 +529,10 @@ export function RuleWorkbench() {
             </span>
             <div>
               <p className="text-sm font-semibold tracking-[0.02em]">
-                彼得林奇投资模型
+                林奇基本面研究
               </p>
               <p className="hidden text-[10px] text-[var(--ds-text-tertiary)] sm:block">
-                规则逐条确认 · 研究工作台
+                原著规则 · 逐条核对 · 人工确认
               </p>
             </div>
           </div>
@@ -569,18 +569,20 @@ export function RuleWorkbench() {
       </header>
 
       <div className="border-b border-[var(--ds-border-subtle)] bg-[var(--ds-surface-subtle)]">
-        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--ds-text-tertiary)] lg:px-6">
-          <span className="text-[var(--ds-accent)]">RULESET/53 LOCKED</span>
-          <span className="text-[var(--ds-warning)]">
-            EVIDENCE/OFFICIAL FILINGS
+        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 text-[11px] font-medium tracking-[0.02em] text-[var(--ds-text-tertiary)] lg:px-6">
+          <span className="text-[var(--ds-accent)]">规则库 · 53 条</span>
+          <span className="text-[var(--ds-success)]">
+            依据 · 原著与官方报告
           </span>
-          <span className="text-[var(--ds-accent)]">MODEL/PROGRAM ≠ AI</span>
+          <span className="text-[var(--ds-primary)]">
+            结论 · 程序计算与人工确认分开
+          </span>
           <span
             className={
               lockedAt ? 'text-[var(--ds-success)]' : 'text-[var(--ds-warning)]'
             }
           >
-            STATE/{lockedAt ? 'LOCKED' : 'REVIEW'}
+            状态 · {lockedAt ? '已锁定' : '核对中'}
           </span>
         </div>
       </div>
@@ -605,10 +607,10 @@ export function RuleWorkbench() {
                 </Badge>
               </div>
               <h1 className="text-2xl font-semibold tracking-[-0.02em] sm:text-3xl">
-                一本书，一条一条确认
+                规则如何形成
               </h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-                先看书里怎么说，再确认怎么使用。没有出处的不收，书里没给数字的也不会硬编数字。
+                这里记录每条规则的原著出处、使用方式和评分边界。你不需要读过原著；有疑问时再展开上下文和核对记录。
               </p>
             </div>
             <div className="flex items-center gap-2 text-xs text-[var(--ds-text-secondary)]">
@@ -629,7 +631,7 @@ export function RuleWorkbench() {
                 blockerCount,
                 blockerCount === 0 ? '可以锁定' : '处理完才能锁定',
               ],
-              ['用于评分', scoringCount, '16条程序 + 14条AI确认'],
+              ['用于评分', scoringCount, '16条程序 + 14条人工确认'],
               ['只做提醒', reminderCount, `${excludedCount} 条不采用`],
             ].map(([label, value, note]) => (
               <Card
@@ -1064,7 +1066,7 @@ export function RuleWorkbench() {
                     <span className="font-medium">规则库已锁定</span>
                   </div>
                   <p className="mt-3 text-sm leading-6 text-[var(--ds-text-secondary)]">
-                    30条评分规则已经固化。16条由程序计算，14条由AI整理证据并等你确认。
+                    30条评分规则已经固化。16条由程序计算，14条定性判断需要人工确认。
                   </p>
                 </div>
               ) : (
@@ -1128,10 +1130,10 @@ export function RuleWorkbench() {
                 <AlertTriangle className="mt-0.5 size-5 shrink-0 text-[var(--ds-warning)]" />
                 <div>
                   <p className="font-medium text-[var(--ds-warning)]">
-                    AI只做助手
+                    补充分析不替代确认
                   </p>
                   <p className="mt-1 text-xs leading-5 text-[var(--ds-text-secondary)]">
-                    AI可以找财报证据、解释文字和发现矛盾，但不能批准规则，也不能改最终分数。
+                    扩展服务可以整理财报证据、解释文字和发现矛盾，但不能批准规则，也不能改变最终分数。
                   </p>
                 </div>
               </div>
@@ -1152,7 +1154,7 @@ export function RuleWorkbench() {
       </div>
 
       <footer className="border-t border-[var(--ds-border-subtle)] px-4 py-4 text-center text-xs text-[var(--ds-text-tertiary)] lg:px-6">
-        本地使用 · 不构成投资建议 · AI建议未经确认不进入正式评分
+        本地使用 · 不构成投资建议 · 定性判断未经确认不进入正式评分
       </footer>
       {!ready && <span className="sr-only">正在读取本机确认结果</span>}
     </main>

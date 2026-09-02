@@ -732,14 +732,14 @@ export function FundamentalsWorkbench() {
       const body = (await response.json()) as AiAnalysisReport & {
         error?: string;
       };
-      if (!response.ok) throw new Error(body.error || 'AI分析失败');
+      if (!response.ok) throw new Error(body.error || '补充研判失败');
       setAiReport(body);
       setConfirmedAiRules(new Set());
       setConfirmedCompanyTypes([]);
     } catch (error) {
       setNotice({
         tone: 'warn',
-        text: error instanceof Error ? error.message : 'AI分析失败',
+        text: error instanceof Error ? error.message : '补充研判失败',
       });
     } finally {
       setAiLoading(false);
@@ -751,15 +751,15 @@ export function FundamentalsWorkbench() {
       <header className="sticky top-0 z-40 border-b border-[var(--ds-border-subtle)] bg-[var(--ds-app-chrome)] text-[var(--ds-text-primary)]">
         <div className="mx-auto flex h-12 max-w-[1600px] items-center justify-between gap-4 px-4 lg:px-6">
           <div className="flex items-center gap-3">
-            <span className="grid size-7 place-items-center border border-[var(--ds-accent)] font-mono text-[10px] font-bold tracking-tight text-[var(--ds-accent)]">
-              PL
+            <span className="grid size-7 place-items-center rounded-[5px] bg-[var(--ds-primary)] font-mono text-[10px] font-bold tracking-tight text-white">
+              LY
             </span>
             <div className="leading-none">
               <p className="text-[13px] font-semibold tracking-[0.02em]">
-                彼得林奇研究终端
+                林奇基本面研究
               </p>
               <p className="mt-1 text-[10px] text-[var(--ds-text-tertiary)]">
-                用官方财报看懂一家公司
+                官方财报 · 估值 · 财务质量
               </p>
             </div>
           </div>
@@ -816,9 +816,9 @@ export function FundamentalsWorkbench() {
 
       <div className="research-tape" aria-label="研究工作流状态">
         <div className="mx-auto flex min-w-max max-w-[1600px] items-center px-4 lg:px-6">
-          <TapeItem label="规则" value="53 条已锁定" />
-          <TapeItem label="数据" value="官方披露" tone="evidence" />
-          <TapeItem label="方法" value="程序计算 + 人工判断" />
+          <TapeItem label="研究框架" value="53 条规则" />
+          <TapeItem label="主要数据" value="官方定期报告" tone="evidence" />
+          <TapeItem label="判断方式" value="程序计算 + 人工确认" />
           <TapeItem
             label="状态"
             value={
@@ -843,7 +843,7 @@ export function FundamentalsWorkbench() {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="truncate text-base font-semibold tracking-[0.01em]">
-                {activeName ?? '输入股票代码开始基本面研究'}
+                {activeName ?? '研究一家公司，从股票代码开始'}
               </h1>
               {activeName && (
                 <Badge
@@ -860,7 +860,8 @@ export function FundamentalsWorkbench() {
               )}
             </div>
             <p className="mt-1 text-[11px] text-[var(--ds-text-tertiary)]">
-              官方披露 / 10年年度数据 / 最新法定报告生成 TTM / 所有数字可追溯
+              官方定期报告 · 十年年度数据 · 最新法定报告形成滚动值 ·
+              关键数字可追溯
             </p>
           </div>
           {dataset && (
@@ -904,22 +905,29 @@ export function FundamentalsWorkbench() {
                 <div className="lookup-form-grid grid gap-4 lg:grid-cols-[minmax(220px,0.7fr)_minmax(320px,1.3fr)] lg:items-end">
                   <div className="lookup-intro">
                     <p className="terminal-label flex items-center gap-2 text-[var(--ds-accent)]">
-                      <Search className="size-3.5" /> 股票研究
+                      <Search className="size-3.5" /> 公司研究
                     </p>
                     <h2
                       id="instrument-lookup-title"
                       className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl"
                     >
-                      输入股票代码，先看懂这家公司
+                      研究一家公司，从股票代码开始
                     </h2>
                     <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--ds-text-tertiary)]">
-                      支持 6 位 A 股和 5
-                      位港股代码。系统会先确认公司，再读取官方财报；不需要先读过彼得·林奇的书。
+                      输入 6 位 A 股或 5
+                      位港股代码。我们会先核对公司身份和报告范围，再整理估值、增长、负债与现金流。无需了解彼得·林奇的术语。
                     </p>
                   </div>
                   <div className="space-y-2">
+                    <label
+                      htmlFor="stock-code"
+                      className="block text-xs font-semibold text-[var(--ds-text-secondary)]"
+                    >
+                      股票代码
+                    </label>
                     <div className="flex flex-col gap-2 sm:flex-row">
                       <Input
+                        id="stock-code"
                         value={stockCode}
                         onChange={(event) => {
                           const next = event.target.value
@@ -1135,10 +1143,10 @@ export function FundamentalsWorkbench() {
                 {!lookup && !dataset && (
                   <div className="mt-auto grid grid-cols-2 border-t border-[var(--ds-border-subtle)] pt-5 sm:grid-cols-4">
                     {[
-                      ['01', '定位', '官方披露'],
-                      ['02', '抽取', '财务原表'],
-                      ['03', '复核', '口径与来源'],
-                      ['04', '开放', '规则与图表'],
+                      ['01', '确认公司', '市场与证券代码'],
+                      ['02', '读取报告', '财务原表'],
+                      ['03', '核对口径', '报告期与来源'],
+                      ['04', '形成结果', '指标与依据'],
                     ].map(([code, title, note]) => (
                       <div
                         key={code}
@@ -1165,37 +1173,37 @@ export function FundamentalsWorkbench() {
             {!dataset && (
               <aside className="terminal-panel" data-channel="evidence">
                 <div className="p-4 sm:p-5">
-                  <p className="terminal-label flex items-center gap-2 text-[var(--ds-evidence)]">
-                    <CircleHelp className="size-3.5" /> 第一次使用
+                  <p className="terminal-label flex items-center gap-2 text-[var(--ds-success)]">
+                    <CircleHelp className="size-3.5" /> 结果说明
                   </p>
                   <h2 className="mt-2 text-base font-semibold">
-                    三步读懂研究结果
+                    研究结果怎么看
                   </h2>
                   <p className="mt-2 text-sm leading-6 text-[var(--ds-text-tertiary)]">
-                    你不需要记住书中的分类和公式。系统先把数字翻译成可读结论，想核对时再展开来源。
+                    彼得·林奇方法关注增长、估值、负债和现金流。这里先展示结论，再提供报告、页码和计算过程。
                   </p>
                   <div className="mt-4 divide-y divide-[var(--ds-border-subtle)] border-y border-[var(--ds-border-subtle)]">
                     <ResearchGateRow
                       code="01"
-                      title="输入代码"
-                      note="先确认公司与官方报告"
+                      title="公司与报告"
+                      note="确认研究对象和数据范围"
                     />
                     <ResearchGateRow
                       code="02"
-                      title="看核心指标"
-                      note="增长、负债、估值先看结论"
+                      title="先看四项"
+                      note="估值、增长、负债、现金流"
                     />
                     <ResearchGateRow
                       code="03"
-                      title="展开为什么"
-                      note="查看公式、页码与原始报告"
+                      title="查看依据"
+                      note="回到公式、页码与原始报告"
                     />
                   </div>
                   <div className="mt-4 flex items-center justify-between gap-3 text-xs">
                     <span className="text-[var(--ds-text-tertiary)]">
                       公司类型
                     </span>
-                    <span className="text-right font-semibold text-[var(--ds-evidence)]">
+                    <span className="text-right font-semibold text-[var(--ds-success)]">
                       {confirmedCompanyTypes.length > 0
                         ? confirmedCompanyTypes
                             .map(companyTypeLabel)
@@ -1316,7 +1324,7 @@ export function FundamentalsWorkbench() {
           {dataset && (
             <section className="space-y-3">
               <div>
-                <p className="ds-eyebrow">MARKET SNAPSHOT</p>
+                <p className="ds-eyebrow">公司概览</p>
                 <h2 className="mt-1 text-[17px] font-semibold tracking-tight">
                   市场快照与核心指标
                 </h2>
@@ -1497,7 +1505,7 @@ export function FundamentalsWorkbench() {
               <section id="financials" className="scroll-mt-32">
                 <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
                   <div>
-                    <p className="ds-eyebrow">FINANCIAL TRENDS</p>
+                    <p className="ds-eyebrow">财务质量</p>
                     <h2 className="mt-1 text-[17px] font-semibold tracking-tight">
                       财务趋势与数据表
                     </h2>
@@ -1651,10 +1659,10 @@ export function FundamentalsWorkbench() {
                     <div>
                       <CardTitle className="flex items-center gap-2 text-base font-semibold">
                         <Sparkles className="size-5 text-[var(--ds-accent)]" />{' '}
-                        AI证据分析与反方审计
+                        补充研判（可选）
                       </CardTitle>
                       <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                        AI只能使用已抽取数据和官方报告元数据。定性规则缺少原文时必须返回“证据不足”；只有你确认的建议才进入总分。
+                        用于整理公司类型、定性信息和反方观点。程序计算结果不受影响，未经你确认的判断不会进入综合结果。
                       </p>
                     </div>
                     <Button
@@ -1668,17 +1676,17 @@ export function FundamentalsWorkbench() {
                       ) : (
                         <Sparkles className="size-4" />
                       )}
-                      {aiLoading ? '分析中' : '生成AI分析'}
+                      {aiLoading ? '整理中' : '生成补充研判'}
                     </Button>
                   </CardHeader>
                   <CardContent>
                     {!aiReport ? (
-                      <EmptyLine text="程序评分不依赖AI。配置OPENAI_API_KEY后，可在这里生成分类、正方观点和反方审计。" />
+                      <EmptyLine text="扩展分析服务未配置。程序结果可以独立使用；配置服务后，可补充公司分类、定性观点和反方审计。" />
                     ) : (
                       <div className="space-y-4">
                         <div className="grid gap-3 md:grid-cols-3">
                           <AnalysisText
-                            label="林奇分类建议"
+                            label="公司类型建议"
                             text={`${aiReport.companyTypes.map(companyTypeLabel).join(' + ')} · 置信度 ${(aiReport.classificationConfidence * 100).toFixed(0)}%\n${aiReport.classificationRationale}`}
                           />
                           <AnalysisText
@@ -1708,10 +1716,10 @@ export function FundamentalsWorkbench() {
                             )
                           }
                         >
-                          采用并确认AI建议的多个类型
+                          采用并确认建议的公司类型
                         </Button>
                         <div>
-                          <p className="text-sm font-medium">14条AI规则建议</p>
+                          <p className="text-sm font-medium">14条定性判断</p>
                           <div className="mt-2 grid gap-2 lg:grid-cols-2">
                             {aiReport.ruleSuggestions.map((suggestion) => {
                               const confirmed = confirmedAiRules.has(
@@ -1720,7 +1728,7 @@ export function FundamentalsWorkbench() {
                               return (
                                 <label
                                   key={suggestion.ruleId}
-                                  aria-label={`确认AI规则${suggestion.ruleId}`}
+                                  aria-label={`确认定性判断${suggestion.ruleId}`}
                                   className="flex cursor-pointer gap-3 rounded-lg border border-[var(--ds-border-subtle)] bg-[var(--ds-surface-subtle)] p-3"
                                 >
                                   <input
@@ -1777,7 +1785,7 @@ export function FundamentalsWorkbench() {
                     </p>
                     <p className="mt-1 text-sm leading-6 text-[var(--ds-text-secondary)]">
                       程序规则只按锁定公式给出
-                      +1、0、-1、不适用或证据不足。AI整理的14条定性证据必须由你确认，未确认前只叫“AI建议”。
+                      +1、0、-1、不适用或证据不足。14条定性判断需要人工确认，未确认前不进入综合结果。
                     </p>
                   </div>
                 </div>
@@ -1862,11 +1870,11 @@ function ResearchModuleMap({ state }: { state: 'waiting' | 'located' }) {
     <section className="terminal-panel" aria-labelledby="module-map-title">
       <div className="flex flex-col justify-between gap-3 border-b border-[var(--ds-border-subtle)] px-4 py-3 sm:flex-row sm:items-end">
         <div>
-          <p className="terminal-label">接下来你会看到</p>
+          <p className="terminal-label">研究内容</p>
           <h2 id="module-map-title" className="mt-1 text-base font-semibold">
             {state === 'located'
               ? '报告已定位，等待数据校验'
-              : '研究模块将在证据就绪后开放'}
+              : '查询后将形成六个研究模块'}
           </h2>
         </div>
         <p className="max-w-xl text-xs leading-5 text-[var(--ds-text-tertiary)] sm:text-right">
@@ -2166,7 +2174,7 @@ function CompanyTypePicker({
                     {option.label}
                     {aiSuggested && (
                       <span className="rounded-sm bg-[var(--ds-info-bg)] px-1.5 py-0.5 text-[9px] text-[var(--ds-info)]">
-                        AI建议
+                        补充建议
                       </span>
                     )}
                   </span>

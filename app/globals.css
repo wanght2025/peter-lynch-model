@@ -36,30 +36,31 @@
 :root {
   color-scheme: light;
   --ds-app-chrome: #ffffff;
-  --ds-canvas: #f4f6f8;
+  --ds-canvas: #f3f6fa;
   --ds-surface: #ffffff;
-  --ds-surface-subtle: #f7f9fb;
+  --ds-surface-subtle: #f7f9fc;
   --ds-surface-selected: #eaf1ff;
   --ds-surface-elevated: #ffffff;
-  --ds-text-primary: #131722;
-  --ds-text-secondary: #434b5d;
-  --ds-text-tertiary: #6a7385;
-  --ds-text-disabled: #9aa3b2;
-  --ds-border-subtle: #e0e3eb;
-  --ds-border-strong: #b8bfcc;
-  --ds-accent: #2962ff;
-  --ds-accent-hover: #1e53e5;
-  --ds-evidence: #9a5b00;
-  --ds-evidence-bg: #fff8e8;
-  --ds-success: #14805e;
-  --ds-success-bg: #ecf9f4;
-  --ds-warning: #9a5b00;
-  --ds-warning-bg: #fff8e8;
-  --ds-danger: #c5362f;
+  --ds-text-primary: #0f172a;
+  --ds-text-secondary: #445064;
+  --ds-text-tertiary: #697586;
+  --ds-text-disabled: #98a2b3;
+  --ds-border-subtle: #e2e8f0;
+  --ds-border-strong: #cbd5e1;
+  --ds-primary: #1e3a5f;
+  --ds-accent: #2563eb;
+  --ds-accent-hover: #1d4ed8;
+  --ds-evidence: #0f766e;
+  --ds-evidence-bg: #ecfdf8;
+  --ds-success: #0f766e;
+  --ds-success-bg: #ecfdf8;
+  --ds-warning: #a16207;
+  --ds-warning-bg: #fffbeb;
+  --ds-danger: #c2413b;
   --ds-danger-bg: #fff1f0;
-  --ds-info: #1769d2;
-  --ds-info-bg: #edf5ff;
-  --ds-focus: #2962ff;
+  --ds-info: #2563eb;
+  --ds-info-bg: #eff6ff;
+  --ds-focus: #2563eb;
   --background: var(--ds-canvas);
   --foreground: var(--ds-text-primary);
   --card: var(--ds-surface);
@@ -78,12 +79,11 @@
   --border: var(--ds-border-subtle);
   --input: var(--ds-border-strong);
   --ring: var(--ds-focus);
-  --radius: 0.4rem;
+  --radius: 0.44rem;
   --font-sans:
     'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', 'Noto Sans CJK SC',
     sans-serif;
-  --font-serif:
-    'Segoe UI Semibold', 'Microsoft YaHei UI', 'PingFang SC', sans-serif;
+  --font-serif: 'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', sans-serif;
   --font-mono: 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
 }
 
@@ -107,8 +107,8 @@
   }
 
   ::selection {
-    background: #d9e5ff;
-    color: #131722;
+    background: #dbeafe;
+    color: #0f172a;
   }
 }
 
@@ -135,7 +135,7 @@
 
 .finance-shell [data-slot='card'] {
   border: 1px solid var(--ds-border-subtle);
-  border-radius: 4px;
+  border-radius: 7px;
   background: var(--ds-surface);
   box-shadow: none;
 }
@@ -172,7 +172,6 @@
 .finance-shell [data-slot='card-title'],
 .finance-dialog [data-slot='dialog-title'] {
   font-family: var(--font-serif);
-  font-stretch: condensed;
   letter-spacing: -0.018em;
 }
 
@@ -206,17 +205,17 @@
 }
 
 .ds-eyebrow {
-  color: var(--ds-text-tertiary);
-  font-family: var(--font-mono);
-  font-size: 10px;
+  color: var(--ds-primary);
+  font-family: var(--font-sans);
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.04em;
 }
 
 .ds-kpi-strip {
   overflow: hidden;
   border: 1px solid var(--ds-border-subtle);
-  border-radius: 4px;
+  border-radius: 7px;
   background: var(--ds-border-subtle);
   gap: 1px;
 }
@@ -227,7 +226,7 @@
 
 .terminal-panel {
   border: 1px solid var(--ds-border-subtle);
-  border-radius: 6px;
+  border-radius: 7px;
   background: var(--ds-surface);
   box-shadow: inset 2px 0 0 transparent;
 }
@@ -251,18 +250,16 @@
 
 .terminal-heading {
   font-family: var(--font-serif);
-  font-stretch: condensed;
   font-weight: 600;
   letter-spacing: -0.018em;
 }
 
 .terminal-label {
   color: var(--ds-text-tertiary);
-  font-family: var(--font-mono);
-  font-size: 10px;
+  font-family: var(--font-sans);
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .research-tape {
@@ -294,15 +291,14 @@
 }
 
 .terminal-button {
-  border-radius: 3px;
+  border-radius: 5px;
   font-family: var(--font-serif);
-  font-stretch: condensed;
   font-weight: 600;
   letter-spacing: 0.01em;
 }
 
 .finance-shell header {
-  box-shadow: 0 1px 3px rgba(19, 23, 34, 0.04);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 
 .finance-shell summary {
