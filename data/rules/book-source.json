@@ -1,0 +1,13 @@
+{
+  "id": "lynch-cn-2018-9787111590736",
+  "title": "《彼得·林奇的成功投资（典藏版）》",
+  "publisher": "机械工业出版社",
+  "year": 2018,
+  "isbn": "978-7-111-59073-6",
+  "format": "MOBI",
+  "printedPagesAvailable": false,
+  "sourceFileSha256": "858843B18D60E48466887376FC201F5EEB2F64FB6129AE34CF287077B1E69D4E",
+  "extractedTextSha256": "AC76C7C2FFADC13375992179C6E794D17CC1C736A79B06FA3417F1E1580DB38A",
+  "locatorPolicy": "章节＋小节＋抽取文本行号＋短原文＋源文件哈希",
+  "notice": "MOBI没有稳定纸质页码；取得同版PDF后再追加printedPage，不得伪造页码。"
+}

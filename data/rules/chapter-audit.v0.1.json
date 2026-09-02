@@ -1,0 +1,27 @@
+{
+  "version": "0.1.0",
+  "sourceRef": "lynch-cn-2018-9787111590736",
+  "chapters": [
+    { "chapter": 1, "status": "indexed", "target": "背景与案例分流" },
+    { "chapter": 2, "status": "indexed", "target": "专业投资者约束与个人优势" },
+    { "chapter": 3, "status": "indexed", "target": "风险观念与长期持有前提" },
+    { "chapter": 4, "status": "candidate_extracted", "target": "投资前置护栏" },
+    { "chapter": 5, "status": "candidate_extracted", "target": "市场预测护栏" },
+    { "chapter": 6, "status": "candidate_extracted", "target": "发现线索与研究前提" },
+    { "chapter": 7, "status": "candidate_extracted", "target": "六类公司定义" },
+    { "chapter": 8, "status": "candidate_extracted", "target": "13条选股准则" },
+    { "chapter": 9, "status": "candidate_extracted", "target": "回避对象" },
+    { "chapter": 10, "status": "candidate_extracted", "target": "收益与市盈率" },
+    { "chapter": 11, "status": "candidate_extracted", "target": "投资故事与买前复核" },
+    { "chapter": 12, "status": "candidate_extracted", "target": "信息来源与年报" },
+    { "chapter": 13, "status": "candidate_extracted", "target": "财务指标与估值" },
+    { "chapter": 14, "status": "candidate_extracted", "target": "定期重新核查" },
+    { "chapter": 15, "status": "candidate_extracted", "target": "六类公司检查表" },
+    { "chapter": 16, "status": "candidate_extracted", "target": "组合层规则与行为护栏" },
+    { "chapter": 17, "status": "candidate_extracted", "target": "买入与卖出信号" },
+    { "chapter": 18, "status": "candidate_extracted", "target": "价格心理误区" },
+    { "chapter": 19, "status": "indexed", "target": "衍生品与卖空护栏" },
+    { "chapter": 20, "status": "indexed", "target": "长期投资观点" }
+  ],
+  "completionRule": "indexed不代表完成逐段审计；只有reviewed才可计入规则库v1.0验收。"
+}

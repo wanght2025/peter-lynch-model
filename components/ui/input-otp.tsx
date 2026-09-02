@@ -29,6 +29,7 @@ function InputOTP({
 
 function InputOTPGroup({ className, ...props }: React.ComponentProps<'div'>) {
   return (
+    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- The visual separator contains an icon and is not a thematic break.
     <div
       data-slot="input-otp-group"
       className={cn(
@@ -70,6 +71,7 @@ function InputOTPSlot({
   );
 }
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- The visual separator contains an icon and is not a thematic break. */
 function InputOTPSeparator({ ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -82,5 +84,6 @@ function InputOTPSeparator({ ...props }: React.ComponentProps<'div'>) {
     </div>
   );
 }
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */
 
 export { InputOTP, InputOTPGroup, InputOTPSlot, InputOTPSeparator };

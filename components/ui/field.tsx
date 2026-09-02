@@ -69,6 +69,7 @@ const fieldVariants = cva(
   },
 );
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- Field may wrap controls that cannot be nested in a fieldset. */
 function Field({
   className,
   orientation = 'vertical',
@@ -84,6 +85,7 @@ function Field({
     />
   );
 }
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */
 
 function FieldContent({ className, ...props }: React.ComponentProps<'div'>) {
   return (

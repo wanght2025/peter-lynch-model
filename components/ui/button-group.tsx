@@ -22,6 +22,7 @@ const buttonGroupVariants = cva(
   },
 );
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- Polymorphic button groups cannot safely become fieldsets. */
 function ButtonGroup({
   className,
   orientation,
@@ -37,6 +38,7 @@ function ButtonGroup({
     />
   );
 }
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */
 
 function ButtonGroupText({
   className,

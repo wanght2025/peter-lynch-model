@@ -6,6 +6,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- Items are polymorphic and are not guaranteed to render as li elements. */
 function ItemGroup({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -19,6 +20,7 @@ function ItemGroup({ className, ...props }: React.ComponentProps<'div'>) {
     />
   );
 }
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */
 
 function ItemSeparator({
   className,

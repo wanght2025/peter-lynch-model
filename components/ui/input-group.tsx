@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- Keeps the div-based compound input API while exposing its grouping semantics. */
 function InputGroup({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -21,6 +22,7 @@ function InputGroup({ className, ...props }: React.ComponentProps<'div'>) {
     />
   );
 }
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */
 
 const inputGroupAddonVariants = cva(
   "text-muted-foreground h-auto gap-2 py-1.5 text-sm font-medium group-data-[disabled=true]/input-group:opacity-50 [&>kbd]:rounded-[calc(var(--radius)-5px)] [&>svg:not([class*='size-'])]:size-4 flex cursor-text items-center justify-center select-none",
@@ -43,6 +45,7 @@ const inputGroupAddonVariants = cva(
   },
 );
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- Addons may contain mixed controls and labels, so no single semantic tag is equivalent. */
 function InputGroupAddon({
   className,
   align = 'inline-start',
@@ -54,7 +57,7 @@ function InputGroupAddon({
       data-slot="input-group-addon"
       data-align={align}
       className={cn(inputGroupAddonVariants({ align }), className)}
-      onClick={(e) => {
+      onPointerDown={(e) => {
         if ((e.target as HTMLElement).closest('button')) {
           return;
         }
@@ -64,6 +67,7 @@ function InputGroupAddon({
     />
   );
 }
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */
 
 const inputGroupButtonVariants = cva(
   'gap-2 text-sm flex items-center shadow-none',

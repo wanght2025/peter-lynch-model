@@ -46,6 +46,7 @@ function PaginationLink({
   className,
   isActive,
   size = 'icon',
+  children,
   ...props
 }: PaginationLinkProps) {
   return (
@@ -57,10 +58,15 @@ function PaginationLink({
       render={
         <a
           aria-current={isActive ? 'page' : undefined}
+          aria-label={
+            props['aria-label'] ?? (isActive ? 'Current page' : 'Go to page')
+          }
           data-slot="pagination-link"
           data-active={isActive}
           {...props}
-        />
+        >
+          {children ?? <span className="sr-only">Page</span>}
+        </a>
       }
     />
   );

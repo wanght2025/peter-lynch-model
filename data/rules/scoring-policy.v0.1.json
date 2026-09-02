@@ -1,0 +1,24 @@
+{
+  "version": "0.1.0-draft",
+  "name": "林奇匹配分（程序排序方法）",
+  "status": "candidate",
+  "bookFormula": false,
+  "disclosure": "汇总公式是本程序的等权排序方法，不是彼得·林奇原著评分公式。",
+  "outcomes": {
+    "positive": 1,
+    "risk": -1,
+    "neutral": 0,
+    "not_applicable": null,
+    "insufficient": null
+  },
+  "formula": "50 + 50 * (positiveCount - riskCount) / evidencedApplicableCount",
+  "coverageFormula": "evidencedApplicableCount / applicableCount",
+  "rules": [
+    "只加载status=verified且scoreEligible=true的规则",
+    "所有规则等权，不允许自定义20/15/10等权重",
+    "不适用规则不进入分母",
+    "证据不足不进入得分分母，只进入覆盖率分母",
+    "同一duplicateGroup最多一个规则参与计分",
+    "原文重大风险必须单独展示，不能被总分掩盖"
+  ]
+}

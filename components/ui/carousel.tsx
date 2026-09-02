@@ -42,6 +42,7 @@ function useCarousel() {
   return context;
 }
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- ARIA carousel pattern requires an explicitly named region. */
 function Carousel({
   orientation = 'horizontal',
   opts,
@@ -95,11 +96,12 @@ function Carousel({
 
   React.useEffect(() => {
     if (!api) return;
-    onSelect(api);
+    const frame = requestAnimationFrame(() => onSelect(api));
     api.on('reInit', onSelect);
     api.on('select', onSelect);
 
     return () => {
+      cancelAnimationFrame(frame);
       api?.off('select', onSelect);
     };
   }, [api, onSelect]);
@@ -131,6 +133,7 @@ function Carousel({
     </CarouselContext.Provider>
   );
 }
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */
 
 function CarouselContent({ className, ...props }: React.ComponentProps<'div'>) {
   const { carouselRef, orientation } = useCarousel();
@@ -153,6 +156,7 @@ function CarouselContent({ className, ...props }: React.ComponentProps<'div'>) {
   );
 }
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- ARIA carousel slides use group semantics and are not fieldsets. */
 function CarouselItem({ className, ...props }: React.ComponentProps<'div'>) {
   const { orientation } = useCarousel();
 
@@ -170,6 +174,7 @@ function CarouselItem({ className, ...props }: React.ComponentProps<'div'>) {
     />
   );
 }
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */
 
 function CarouselPrevious({
   className,

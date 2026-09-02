@@ -1,0 +1,78 @@
+{
+  "version": "0.1.0-candidate",
+  "sourceRef": "lynch-cn-2018-9787111590736",
+  "items": [
+    {
+      "id": "EX-01-BIOGRAPHY",
+      "chapter": "第1章",
+      "locator": "TXT-L381-L427",
+      "summary": "作者成长经历与职业背景",
+      "reason": "背景材料，不是可执行公司判断。",
+      "status": "candidate_exclusion"
+    },
+    {
+      "id": "EX-03-HISTORICAL-RETURN",
+      "chapter": "第3章",
+      "locator": "TXT-L508-L566",
+      "summary": "长期股票与债券历史回报案例",
+      "reason": "用于风险观念，不直接作为单家公司评分指标。",
+      "status": "candidate_exclusion"
+    },
+    {
+      "id": "EX-08-BORING-NAME",
+      "chapter": "第8章",
+      "locator": "TXT-L846-L855",
+      "summary": "公司名称和业务枯燥乏味",
+      "reason": "可能是发现线索，但无法稳定、客观地用于A股批量评分。保留待用户复核。",
+      "status": "candidate_exclusion"
+    },
+    {
+      "id": "EX-08-RUMOR-DEPRESSING",
+      "chapter": "第8章",
+      "locator": "TXT-L883-L897",
+      "summary": "负面传闻或令人压抑的业务",
+      "reason": "叙事线索难以验证，不能让AI凭情绪计分。",
+      "status": "candidate_exclusion"
+    },
+    {
+      "id": "EX-09-WHISPER-STOCK",
+      "chapter": "第9章",
+      "locator": "TXT-L1006-L1020",
+      "summary": "小声耳语、故事诱人的股票",
+      "reason": "先作为投资者行为护栏，不进入公司横截面评分。",
+      "status": "candidate_exclusion"
+    },
+    {
+      "id": "EX-13-CASH-YIELD-EXAMPLE",
+      "chapter": "第13章",
+      "locator": "TXT-L1360",
+      "summary": "10%现金收益率为长期持有最低收益率的表述",
+      "reason": "需核对翻译语境、现金流口径与是否为通用原则，暂不执行。",
+      "status": "candidate_exclusion"
+    },
+    {
+      "id": "EX-16-PORTFOLIO-COUNT",
+      "chapter": "第16章",
+      "locator": "TXT-L1526-L1533",
+      "summary": "把3～10只持股数量固化为所有人的硬性要求",
+      "reason": "书中同时强调数量取决于真正了解的优质公司；精确数量暂不固化为通用门槛。",
+      "status": "candidate_exclusion"
+    },
+    {
+      "id": "EX-17-CALENDAR-BUYING",
+      "chapter": "第17章",
+      "locator": "TXT-L1560-L1567",
+      "summary": "年底税损卖出和市场崩溃带来的买入时机",
+      "reason": "历史税制与市场结构语境强，不作为A股公司基本面规则。",
+      "status": "candidate_exclusion"
+    },
+    {
+      "id": "EX-19-DERIVATIVES",
+      "chapter": "第19章",
+      "locator": "TXT-L1730-L1760",
+      "summary": "期权、期货与卖空讨论",
+      "reason": "本产品只做股票基本面研究，不提供衍生品或卖空功能。",
+      "status": "candidate_exclusion"
+    }
+  ]
+}

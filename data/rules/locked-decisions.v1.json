@@ -1,0 +1,245 @@
+{
+  "version": "1.0.0",
+  "status": "locked",
+  "lockedAt": "2026-08-30",
+  "sourceRef": "lynch-cn-2018-9787111590736",
+  "disclosure": "规则方向来自锁定书籍；等权、阶段划分、程序口径和汇总分数均为本模型设置，不是彼得·林奇原著评分公式。",
+  "counts": {
+    "scoring": 30,
+    "reminder": 13,
+    "excluded": 10,
+    "program": 16,
+    "ai": 14
+  },
+  "scoringPolicy": {
+    "formula": "50 + 50 * (positiveCount - riskCount) / applicableCount",
+    "coverageFormula": "evidencedApplicableCount / applicableCount",
+    "outcomes": [1, 0, -1, "not_applicable", "insufficient"],
+    "rules": [
+      "所有适用规则等权，每条最多正负1分",
+      "不适用不进入分母",
+      "证据不足不算通过，覆盖率单列",
+      "第一阶段只计算16条程序规则",
+      "第二阶段14条AI规则必须经用户确认后才进入正式总分",
+      "AI只能整理证据和建议，不能批准规则或修改分值"
+    ]
+  },
+  "dataPolicy": {
+    "annualYears": 10,
+    "quarterlyPeriods": 12,
+    "primaryGrowthYears": 5,
+    "referenceGrowthYears": [3, 10],
+    "financialCompaniesRanked": false
+  },
+  "programRules": [
+    {
+      "id": "LYN-08-SPINOFF",
+      "metricIds": ["corporate_action.spinoff"],
+      "formula": "以法定公告确认是否为分拆上市或从母公司分拆",
+      "positive": "有可追溯的分拆事实",
+      "risk": null,
+      "neutral": "没有分拆事实",
+      "thresholdSource": "book_direction"
+    },
+    {
+      "id": "LYN-08-LOW-INSTITUTIONAL",
+      "metricIds": ["ownership.institutional_ratio", "coverage.analyst_count"],
+      "formula": "展示机构持股比例与分析师覆盖数量，不设置低的自创门槛",
+      "positive": "只有原始披露能明确证明机构持股与覆盖很少时给出正向；否则为0",
+      "risk": null,
+      "neutral": "无法从披露明确判断很少",
+      "thresholdSource": "no_numeric_threshold"
+    },
+    {
+      "id": "LYN-08-INSIDER-BUYING",
+      "metricIds": ["insider.net_buy_shares", "insider.net_buy_amount"],
+      "formula": "汇总最近12个月法定披露的内部人士增持与减持",
+      "positive": "内部人士净买入且证据完整",
+      "risk": "原文未规定将净卖出直接计为风险，显示提醒但计0",
+      "neutral": "无净买入或只有计划没有完成事实",
+      "thresholdSource": "book_direction"
+    },
+    {
+      "id": "LYN-08-BUYBACK",
+      "metricIds": [
+        "shares.outstanding",
+        "buyback.completed_shares",
+        "buyback.cancelled_shares"
+      ],
+      "formula": "用已完成回购、注销公告及期末股本变化交叉验证",
+      "positive": "实际回购并使流通股本减少",
+      "risk": null,
+      "neutral": "只有回购计划或股本未减少",
+      "thresholdSource": "book_direction"
+    },
+    {
+      "id": "LYN-09-CUSTOMER-CONCENTRATION",
+      "metricIds": ["customers.major_dependency_evidence"],
+      "formula": "读取年报对单一大客户依赖的明确披露，不新增百分比门槛",
+      "positive": null,
+      "risk": "公司明确披露对单一或少数大客户存在重大依赖",
+      "neutral": "未出现重大依赖的明确证据",
+      "thresholdSource": "no_numeric_threshold"
+    },
+    {
+      "id": "LYN-13-PE-HALF-DOUBLE",
+      "metricIds": ["valuation.pe_ttm", "growth.earnings_cagr_5y"],
+      "formula": "pe_ttm / earnings_cagr_5y_percent",
+      "positive": "结果不高于0.5",
+      "risk": "结果不低于2",
+      "neutral": "结果大于0.5且小于2",
+      "notApplicable": "净利润或增长率不为正，无法使用市盈率或该比率",
+      "thresholdSource": "book_numeric"
+    },
+    {
+      "id": "LYN-13-DIVIDEND-PEG",
+      "metricIds": [
+        "valuation.pe_ttm",
+        "growth.earnings_cagr_5y",
+        "dividend.yield"
+      ],
+      "formula": "(earnings_cagr_5y_percent + dividend_yield_percent) / pe_ttm",
+      "positive": "结果不低于1.5；不低于2另标记为理想",
+      "risk": "结果低于1",
+      "neutral": "结果不低于1且低于1.5",
+      "notApplicable": "市盈率、增长率或股息率无法可靠取得",
+      "thresholdSource": "book_numeric"
+    },
+    {
+      "id": "LYN-13-NET-CASH",
+      "metricIds": [
+        "balance.cash",
+        "balance.long_term_debt",
+        "balance.interest_bearing_debt",
+        "shares.outstanding"
+      ],
+      "formula": "林奇口径：(cash - long_term_debt) / shares_outstanding；保守代理口径：(cash - total_interest_bearing_debt) / shares_outstanding",
+      "positive": "林奇口径净现金为正且对每股价值形成支撑；同时展示保守代理口径交叉核对",
+      "risk": "任一口径为负时只展示，不因本条自动扣分",
+      "neutral": "林奇口径净现金不为正或每股支撑不明确",
+      "thresholdSource": "book_direction"
+    },
+    {
+      "id": "LYN-13-BALANCE-SHEET",
+      "metricIds": ["balance.equity_ratio", "balance.debt_ratio"],
+      "formula": "equity_ratio = equity / total_assets; debt_ratio = total_liabilities / total_assets",
+      "positive": "股东权益约75%且负债低于25%",
+      "risk": "原文没有给出统一风险阈值，偏离时展示但计0",
+      "neutral": "未同时满足正向条件",
+      "thresholdSource": "book_numeric"
+    },
+    {
+      "id": "LYN-13-PAYOUT-SAFETY",
+      "metricIds": ["dividend.per_share", "dividend.payout_ratio"],
+      "formula": "检查最近10个完整年度的股息连续性，并展示派息率",
+      "positive": "适用公司在完整周期中持续派息且未削减",
+      "risk": "缓慢增长型或稳定增长型在无特别说明时削减或停止股息",
+      "neutral": "其他公司类型或证据只支持部分周期",
+      "thresholdSource": "book_direction"
+    },
+    {
+      "id": "LYN-13-FCF",
+      "metricIds": ["cashflow.operating", "cashflow.capex", "cashflow.free"],
+      "formula": "free_cash_flow = operating_cash_flow - normal_capital_expenditure",
+      "positive": "自由现金流为正且趋势改善",
+      "risk": "持续为负且不是有证据支持的扩张阶段",
+      "neutral": "单期波动或趋势不明确",
+      "thresholdSource": "book_direction"
+    },
+    {
+      "id": "LYN-13-INVENTORY-SALES",
+      "metricIds": ["growth.inventory_yoy", "growth.revenue_yoy"],
+      "formula": "inventory_growth_yoy - revenue_growth_yoy",
+      "positive": "存货增长不快于销售增长且趋势稳定",
+      "risk": "存货增长快于销售增长",
+      "neutral": "差异不明确或业务没有重要存货",
+      "notApplicable": "金融等没有可比存货口径的行业",
+      "thresholdSource": "book_direction"
+    },
+    {
+      "id": "LYN-13-PRETAX-MARGIN",
+      "metricIds": ["margin.pretax", "margin.peer_pretax"],
+      "formula": "展示公司税前利润率历史及同口径同行分位；不自创高利润率门槛",
+      "positive": "有可比证据明确显示处于同行较高水平",
+      "risk": "周期复苏分析中，利润率弹性与原文情形相反或持续恶化",
+      "neutral": "同行口径不足或处于中间区间",
+      "thresholdSource": "no_numeric_threshold"
+    },
+    {
+      "id": "LYN-15-FAST-GROWTH-PREFERENCE",
+      "metricIds": ["growth.earnings_cagr_5y"],
+      "formula": "以最近5个完整年度收益计算复合增长率，同时展示3年与10年",
+      "positive": "快速增长型5年收益复合增长率为20%至25%",
+      "risk": "高于25%显示林奇警告，但不自动扣分",
+      "neutral": "低于20%或公司不属于快速增长型",
+      "notApplicable": "非快速增长型",
+      "thresholdSource": "book_numeric"
+    },
+    {
+      "id": "LYN-10-PE-CONTEXT",
+      "metricIds": [
+        "valuation.pe_ttm",
+        "valuation.pe_history",
+        "valuation.peer_pe"
+      ],
+      "formula": "展示当前市盈率与公司历史、公司类型及同业口径，不设置自创通过线",
+      "positive": "原始数据明确显示估值相对历史和同业偏低且盈利为正",
+      "risk": "原始数据明确显示估值相对历史和同业极高",
+      "neutral": "比较结果混合或不明显",
+      "notApplicable": "亏损公司不计算市盈率",
+      "thresholdSource": "no_numeric_threshold"
+    },
+    {
+      "id": "LYN-12-CASH-DEBT-TREND",
+      "metricIds": ["balance.cash", "balance.interest_bearing_debt"],
+      "formula": "比较最近完整年度及最新报告期的现金与有息负债方向",
+      "positive": "现金增加且有息负债下降",
+      "risk": "现金下降且有息负债增加",
+      "neutral": "两者同向或变化方向不一致",
+      "thresholdSource": "book_direction"
+    }
+  ],
+  "aiRules": [
+    "LYN-06-PRODUCT-MATERIALITY",
+    "LYN-08-ZERO-GROWTH-INDUSTRY",
+    "LYN-08-NICHE",
+    "LYN-08-REPEAT-PURCHASE",
+    "LYN-08-TECH-USER",
+    "LYN-09-AVOID-HOT-STOCK",
+    "LYN-09-AVOID-NEXT",
+    "LYN-09-DIWORSEIFICATION",
+    "LYN-13-DEBT-STRUCTURE",
+    "LYN-15-FAST-REPLICATION",
+    "LYN-15-CYCLICAL",
+    "LYN-15-TURNAROUND",
+    "LYN-15-ASSET-PLAY",
+    "LYN-10-AVOID-EXTREME-PE"
+  ],
+  "reminderRules": [
+    "LYN-06-SIZE-EXPECTATION",
+    "LYN-07-CLASSIFY-FIRST",
+    "LYN-07-SLOW-DEFINITION",
+    "LYN-07-STALWART-DEFINITION",
+    "LYN-07-FAST-DEFINITION",
+    "LYN-13-PE-GROWTH",
+    "LYN-13-EARNINGS-GROWTH",
+    "LYN-17-SELL-STALWART-VALUATION",
+    "LYN-17-SELL-CYCLICAL-INVENTORY",
+    "LYN-17-SELL-FAST-SATURATION",
+    "LYN-10-EARNINGS-ASSETS-VALUE",
+    "LYN-12-SHARE-COUNT-TREND",
+    "LYN-16-HOLD-WHILE-STORY-HOLDS"
+  ],
+  "excludedRules": [
+    "LYN-04-AFFORD-LOSS",
+    "LYN-05-NO-MARKET-FORECAST",
+    "LYN-06-OBSERVATION-NOT-BUY",
+    "LYN-11-TWO-MINUTE-STORY",
+    "LYN-12-READ-NUMBERS",
+    "LYN-13-BOOK-VALUE-REALITY",
+    "LYN-14-RECHECK",
+    "LYN-16-DIVERSIFY-TYPES",
+    "LYN-16-QUALITY-NOT-COUNT",
+    "LYN-18-PRICE-NOT-THESIS"
+  ]
+}
