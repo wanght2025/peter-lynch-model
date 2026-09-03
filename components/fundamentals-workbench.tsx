@@ -2720,7 +2720,8 @@ function FundamentalChart({
             </Badge>
             {expectedValues > 0 && verifiedValues < expectedValues && (
               <span className="text-[11px] text-[var(--ds-warning)]">
-                仍有 {expectedValues - verifiedValues} 个数据点缺少完整来源
+                仍有 {expectedValues - verifiedValues}{' '}
+                个应展示点未形成可核验值（数据缺失或计算边界）
               </span>
             )}
           </div>
