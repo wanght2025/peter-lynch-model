@@ -8,11 +8,14 @@ function fail(message) {
   throw new Error(message);
 }
 
-async function getJson(path) {
+async function getJson(path, { timeout = 30_000, ...init } = {}) {
   const url = `${baseUrl}${path}`;
   let response;
   try {
-    response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    response = await fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(timeout),
+    });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     fail(`请求失败 ${url}：${reason}`);
@@ -63,16 +66,21 @@ function checkOfficialReports(code, body) {
 async function main() {
   console.log(`开始真实数据冒烟测试：${baseUrl}`);
 
+  const lookups = new Map();
   for (const code of ['600519', '00700']) {
     console.log(`检查 /api/official-reports?code=${code} …`);
-    checkOfficialReports(
-      code,
-      await getJson(`/api/official-reports?code=${code}`),
-    );
+    const lookup = await getJson(`/api/official-reports?code=${code}`);
+    checkOfficialReports(code, lookup);
+    lookups.set(code, lookup);
   }
 
-  console.log('检查 /api/fundamentals?code=600519 …');
-  const fundamentals = await getJson('/api/fundamentals?code=600519');
+  console.log('检查 /api/fundamentals POST（复用已确认报告）…');
+  const fundamentals = await getJson('/api/fundamentals', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: '600519', lookup: lookups.get('600519') }),
+    timeout: 240_000,
+  });
   const dataset = fundamentals?.dataset;
   const annual = dataset?.annual;
   const quarterly = dataset?.quarterly;

@@ -704,10 +704,12 @@ export function FundamentalsWorkbench() {
         text: `已确认${locatedLookup.company.companyName}，正在从官方定期报告读取并核验数据。`,
       });
 
-      const fundamentalsResponse = await fetch(
-        `/api/fundamentals?code=${normalized.code}`,
-        { cache: 'no-store' },
-      );
+      const fundamentalsResponse = await fetch('/api/fundamentals', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: normalized.code, lookup: locatedLookup }),
+      });
       const body = await readApiResponse<FundamentalsResponse>(
         fundamentalsResponse,
         '财务数据抽取失败，请稍后重试',
