@@ -1515,7 +1515,7 @@ export function FundamentalsWorkbench() {
                     所有股票使用同一套100分尺度：80分以上进入优选研究区，65—79分值得继续研究，50—64分表现一般，50分以下风险证据占优。
                   </p>
                   <p className="mt-2 text-xs leading-5 text-[var(--ds-text-tertiary)]">
-                    这是同一规则库与同一公式下的横向初筛；公司类型与证据充足度会改变有效规则数，不冒充实时全市场百分位排名。
+                    这是本模型的100分研究尺度，不是林奇原著评分；同一规则库与同一公式可用于横向初筛，但公司类型与证据充足度会改变有效规则数，不冒充实时全市场百分位排名。
                   </p>
                   <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
                     <CoverageCount
