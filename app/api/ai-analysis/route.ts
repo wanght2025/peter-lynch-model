@@ -70,6 +70,12 @@ export async function POST(request: Request) {
       scoreSpec: rule.scoreSpec,
     }));
   const model = process.env.OPENAI_MODEL || 'gpt-5.4';
+  const currentDate = new Date();
+  const cutoffDate = new Date(currentDate);
+  cutoffDate.setUTCDate(cutoffDate.getUTCDate() - 365);
+  cutoffDate.setUTCHours(0, 0, 0, 0);
+  const currentDateText = currentDate.toISOString().slice(0, 10);
+  const cutoffDateText = cutoffDate.toISOString().slice(0, 10);
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
@@ -79,8 +85,10 @@ export async function POST(request: Request) {
     body: JSON.stringify({
       model,
       store: false,
-      instructions:
-        '你是彼得·林奇方法的证据分析员和反方审计员。只能使用输入中的官方报告元数据和已抽取数字；不得补充记忆中的公司事实。同一公司可以同时具有多个林奇类型特征，companyTypes应返回所有有直接证据支持的类型；没有可靠分类证据时只返回unclassified。定性规则缺少原文证据时必须输出insufficient。AI建议不是正式得分，需要用户确认。',
+      tools: [{ type: 'web_search' }],
+      include: ['web_search_call.action.sources'],
+      max_tool_calls: 8,
+      instructions: `你是彼得·林奇方法的证据分析员和反方审计员。当前日期是${currentDateText}。先使用输入中的官方报告与已抽取数字；只有定性证据不足或需要核对近期公司事件时才使用网页搜索。所有网页证据必须发布于${cutoffDateText}至${currentDateText}之间，即最近365天；优先交易所公告、监管披露和公司公告，其次才是可靠新闻。回购必须核对实际完成数量、注销或库存股处理以及股本变化，回购计划不能当成已完成回购。不得使用发布日期不明、超出时间范围或无法打开的网页。每条网页证据必须返回可点击URL、标题和发布日期；没有足够证据必须输出insufficient。未经用户确认的AI建议不进入正式得分。`,
       input: JSON.stringify({
         rules: aiRules,
         evidence: compactDataset(body.dataset, body.analysis),
@@ -133,8 +141,35 @@ export async function POST(request: Request) {
                     outcome: { enum: [...OUTCOMES] },
                     rationale: { type: 'string' },
                     evidence: { type: 'array', items: { type: 'string' } },
+                    sources: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        additionalProperties: false,
+                        properties: {
+                          title: { type: 'string' },
+                          url: { type: 'string' },
+                          publishedAt: { type: 'string' },
+                          sourceType: {
+                            type: 'string',
+                            enum: [
+                              'official_disclosure',
+                              'company_announcement',
+                              'reputable_news',
+                            ],
+                          },
+                        },
+                        required: ['title', 'url', 'publishedAt', 'sourceType'],
+                      },
+                    },
                   },
-                  required: ['ruleId', 'outcome', 'rationale', 'evidence'],
+                  required: [
+                    'ruleId',
+                    'outcome',
+                    'rationale',
+                    'evidence',
+                    'sources',
+                  ],
                 },
               },
             },
@@ -173,6 +208,40 @@ export async function POST(request: Request) {
     AiAnalysisReport,
     'model' | 'generatedAt'
   >;
+  parsed.ruleSuggestions = parsed.ruleSuggestions.map((suggestion) => {
+    const sources = (suggestion.sources ?? []).filter((source) => {
+      const publishedAt = Date.parse(source.publishedAt);
+      let sourceUrl: URL;
+      try {
+        sourceUrl = new URL(source.url);
+      } catch {
+        return false;
+      }
+      return (
+        ['http:', 'https:'].includes(sourceUrl.protocol) &&
+        Number.isFinite(publishedAt) &&
+        publishedAt >= cutoffDate.getTime() &&
+        publishedAt <= currentDate.getTime()
+      );
+    });
+    const needsRecentEventEvidence = [
+      'LYN-08-BUYBACK',
+      'LYN-08-INSIDER-BUYING',
+    ].includes(suggestion.ruleId);
+    if (
+      needsRecentEventEvidence &&
+      suggestion.outcome !== 'insufficient' &&
+      sources.length === 0
+    ) {
+      return {
+        ...suggestion,
+        outcome: 'insufficient' as const,
+        rationale: `${suggestion.rationale}；最近365天内没有可核验来源，不纳入评分。`,
+        sources,
+      };
+    }
+    return { ...suggestion, sources };
+  });
   return Response.json({
     ...parsed,
     model,

@@ -86,7 +86,7 @@ export type PriceSource = {
   url: string;
   retrievedAt: string;
   currency: 'CNY' | 'HKD';
-  adjustment: 'forward';
+  adjustment: 'forward' | 'none';
   sampling: 'calendar_year_end';
   crossCheck?: {
     name: string;

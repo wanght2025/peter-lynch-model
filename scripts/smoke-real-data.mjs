@@ -89,6 +89,25 @@ async function main() {
   if (!fundamentals.analysis || typeof fundamentals.analysis !== 'object') {
     fail('fundamentals analysis 为空');
   }
+  const yearEndPriceCount = annual.filter(
+    (point) => Number.isFinite(point.adjustedPrice) && point.adjustedPrice > 0,
+  ).length;
+  if (yearEndPriceCount !== annual.length) {
+    fail(`fundamentals 年末股价不完整：${yearEndPriceCount}/${annual.length}`);
+  }
+  if (
+    !Number.isFinite(dataset?.currentMarket?.price) ||
+    dataset.currentMarket.price <= 0 ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(dataset.currentMarket.date ?? '')
+  ) {
+    fail('fundamentals 最新价格或行情日期缺失');
+  }
+  if (
+    !Number.isFinite(dataset.currentMarket.peTtm) ||
+    dataset.currentMarket.peTtm <= 0
+  ) {
+    fail('fundamentals 最新PE·TTM缺失');
+  }
   if (fundamentals?.extraction?.requestedReports > 11) {
     fail(
       `fundamentals 下载报告过多：requestedReports=${fundamentals.extraction.requestedReports}（最多 11）`,
@@ -98,7 +117,7 @@ async function main() {
     fail('fundamentals 抽取结果不完整');
   }
   console.log(
-    `✓ 600519 基本面：${annual.length} 年度、${quarterly.length} 季度，解析 ${fundamentals.extraction.requestedReports} 份报告，analysis 已生成`,
+    `✓ 600519 基本面：${annual.length} 年度、${quarterly.length} 季度、${yearEndPriceCount} 个年末价格、最新价 ${dataset.currentMarket.price}（${dataset.currentMarket.date}），解析 ${fundamentals.extraction.requestedReports} 份报告，analysis 已生成`,
   );
   console.log('真实数据冒烟测试通过');
 }

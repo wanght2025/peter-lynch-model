@@ -83,14 +83,15 @@ import type {
   MetricPoint,
   ProgramAnalysis,
   RuleResult,
+  ScoreSummary,
   CompanyType,
   ReportReference,
 } from '@/lib/analysis-types';
 
 type Notice = { tone: 'good' | 'warn' | 'bad'; text: string } | null;
 
-const DATASET_STORAGE_KEY = 'lynch-official-analysis-dataset-v7';
-const ANALYSIS_STORAGE_KEY = 'lynch-program-analysis-v2';
+const DATASET_STORAGE_KEY = 'lynch-official-analysis-dataset-v8';
+const ANALYSIS_STORAGE_KEY = 'lynch-program-analysis-v3';
 const LOOKUP_CACHE_KEY = 'lynch-official-lookup-cache-v2';
 
 const COMPANY_TYPE_OPTIONS: Array<{
@@ -137,7 +138,7 @@ function companyTypeLabel(type: CompanyType) {
 }
 
 const traceMetricLabels: Record<string, string> = {
-  adjustedPrice: '日历年末前复权股价',
+  adjustedPrice: '年末股价',
   revenue: '营业收入',
   netProfit: '归母净利润',
   eps: '基本每股收益',
@@ -184,18 +185,88 @@ function formatAmountAxis(value: number) {
   return `${Math.abs(amount) >= 100 ? amount.toFixed(0) : amount.toFixed(1)}亿`;
 }
 
+function countCollectedDataPoints(dataset: AnalysisDataset) {
+  const points = [
+    ...dataset.annual,
+    ...(dataset.halfYear ?? []),
+    ...dataset.quarterly,
+    ...(dataset.latestComparablePoint ? [dataset.latestComparablePoint] : []),
+  ];
+  const financialCount = points.reduce(
+    (total, point) =>
+      total +
+      Object.entries(point).filter(
+        ([key, value]) =>
+          key !== 'isTtm' &&
+          typeof value === 'number' &&
+          Number.isFinite(value),
+      ).length,
+    0,
+  );
+  const marketCount = dataset.currentMarket
+    ? Object.values(dataset.currentMarket).filter(
+        (value) => typeof value === 'number' && Number.isFinite(value),
+      ).length
+    : 0;
+  return financialCount + marketCount;
+}
+
+function scoreInsight(summary: ScoreSummary | null) {
+  if (!summary?.score && summary?.score !== 0)
+    return {
+      grade: '待评分',
+      verdict: '还没有足够的可验证规则。',
+      comparability: '不可比较',
+    };
+  const coverage = summary.coverage ?? 0;
+  const score = summary.score;
+  const grade =
+    score >= 80
+      ? '优秀'
+      : score >= 65
+        ? '良好'
+        : score >= 50
+          ? '一般'
+          : score >= 35
+            ? '偏弱'
+            : '高风险';
+  const verdict =
+    score >= 80
+      ? '基本面、估值与风险项整体匹配，进入优先研究区。'
+      : score >= 65
+        ? '优势多于风险，具备继续研究价值。'
+        : score >= 50
+          ? '优势与风险接近，暂未形成明显胜率。'
+          : score >= 35
+            ? '风险多于正向证据，需要更高安全边际。'
+            : '关键风险明显，不宜仅凭低估值买入。';
+  return {
+    grade: coverage < 0.6 ? `${grade}（证据偏少）` : grade,
+    verdict,
+    comparability:
+      coverage >= 0.75
+        ? '可横向比较'
+        : coverage >= 0.6
+          ? '谨慎比较'
+          : '仅作初筛',
+  };
+}
+
 const chartDefinitions = [
   {
     id: 'price-eps',
-    title: '日历年末前复权股价与年度每股收益',
+    title: '年末/最新股价与年度EPS',
     description:
-      '历史点为年末前复权股价与年度EPS；最右点为最新市价与最新法定报告期TTM EPS。',
+      '历史点为各年最后交易日股价与年度EPS；最右点为最新市价与最新法定报告期TTM EPS。',
+    auditLabel: '原文方向＋行情口径',
+    originalBasis:
+      '原文要求比较股价走势线与收益线是否相符；价格复权口径在图内单独标明。',
     source: 'annual' as const,
     kind: 'line' as const,
     series: [
       {
         key: 'adjustedPrice',
-        label: '日历年末前复权股价',
+        label: '年末股价',
         color: 'var(--ds-accent)',
       },
       { key: 'eps', label: '年度每股收益', color: 'var(--ds-success)' },
@@ -205,6 +276,9 @@ const chartDefinitions = [
     id: 'growth',
     title: '十年收入、净利润与每股收益',
     description: '前面为完整年度，最右点优先使用最新法定报告生成的TTM值。',
+    auditLabel: '财报辅助图',
+    originalBasis:
+      '用于核对长期经营事实；不作为彼得·林奇原著中的独立评分公式。',
     source: 'annual' as const,
     kind: 'line' as const,
     defaultView: 'table' as const,
@@ -219,6 +293,9 @@ const chartDefinitions = [
     title: '现金、长期债务与全部有息负债',
     description:
       '长期债务用于林奇原文口径；全部有息负债同时包含短期和长期融资负债，用于保守代理口径。',
+    auditLabel: '原文＋保守对照',
+    originalBasis:
+      '原文口径关注现金减长期债务；全部有息负债仅作更保守的并列对照。',
     source: 'annual' as const,
     kind: 'bar' as const,
     series: [
@@ -234,7 +311,10 @@ const chartDefinitions = [
   {
     id: 'inventory-sales',
     title: '存货增长率与销售增长率',
-    description: '优先用最近12个季度；存货增长快于销售增长时直接标为风险证据。',
+    description:
+      '优先用最近12个季度；对有重大存货的非金融公司，存货增长快于销售增长时标为风险证据。',
+    auditLabel: '符合原文',
+    originalBasis: '原文明确指出：存货增长速度快于销售增长速度是危险信号。',
     source: 'quarterlyGrowth' as const,
     kind: 'line' as const,
     series: [
@@ -247,6 +327,9 @@ const chartDefinitions = [
     title: '经营现金流、资本支出与自由现金流代理值',
     description:
       '代理值按经营现金流减全部资本性现金支出计算；财报无法自动拆分维持性与扩张性资本支出。',
+    auditLabel: '代理口径',
+    originalBasis:
+      '原文自由现金流扣除正常资本支出；本图使用全部资本支出，结果更保守但不是原文精确值。',
     source: 'annual' as const,
     kind: 'bar' as const,
     series: [
@@ -260,7 +343,11 @@ const chartDefinitions = [
         label: '资本支出',
         color: 'var(--ds-warning)',
       },
-      { key: 'freeCashFlow', label: '自由现金流', color: 'var(--ds-success)' },
+      {
+        key: 'freeCashFlow',
+        label: '自由现金流（全部资本支出代理）',
+        color: 'var(--ds-success)',
+      },
     ],
   },
   {
@@ -268,6 +355,9 @@ const chartDefinitions = [
     title: '3年、5年与10年每股收益增长率',
     description:
       '对应第13章表13-1的复利关系；5年用于评分，缺少边界年度时不计算。',
+    auditLabel: '符合原文方向',
+    originalBasis:
+      '原文强调真正影响股价的是收益增长率；这里统一使用EPS复合增长率。',
     source: 'growthRates' as const,
     kind: 'bar' as const,
     series: [
@@ -276,8 +366,12 @@ const chartDefinitions = [
   },
   {
     id: 'valuation',
-    title: '市盈率、5年收益增长率与林奇估值比',
-    description: '亏损时市盈率和估值比显示不适用，不能把负市盈率误算成便宜。',
+    title: '市盈率、5年收益增长率与模型辅助比值',
+    description:
+      '亏损时市盈率和比值显示不适用，不能把负市盈率误算成便宜；增长率÷PE仅作模型辅助，不代表统一原文阈值。',
+    auditLabel: '原文方向＋模型辅助',
+    originalBasis:
+      '原文以市盈率与收益增长率是否匹配判断定价是否合理；增长率÷PE为辅助比值，评分仍使用各自已定义规则，不暗示统一原文阈值。',
     source: 'annual' as const,
     kind: 'line' as const,
     defaultView: 'table' as const,
@@ -291,7 +385,7 @@ const chartDefinitions = [
       },
       {
         key: 'lynchValuationRatio',
-        label: '林奇估值比',
+        label: '增长率÷PE（模型辅助比值）',
         color: 'var(--ds-info)',
       },
     ],
@@ -407,7 +501,7 @@ function annualWithLatest(
   if (!latest || latest.period.replace(/ TTM$/, '') === annual.at(-1)?.period)
     return annual;
   return [
-    ...annual.slice(-9),
+    ...annual,
     {
       ...latest,
       period:
@@ -415,6 +509,20 @@ function annualWithLatest(
           ? `${latest.period.replace(/ TTM$/, '')}期末`
           : latest.period,
       adjustedPrice: dataset.currentMarket?.price,
+      metricSources: {
+        ...latest.metricSources,
+        ...(dataset.currentMarket
+          ? {
+              adjustedPrice: {
+                label: '最新市场价格',
+                unit: `${dataset.currentMarket.currency}/股`,
+                date: dataset.currentMarket.date,
+                sourceName: dataset.currentMarket.sourceName,
+                sourceUrl: dataset.currentMarket.sourceUrl,
+              },
+            }
+          : {}),
+      },
     },
   ];
 }
@@ -474,7 +582,7 @@ function valuationSeries(dataset: AnalysisDataset) {
       : null;
   const pe = dataset.currentMarket?.peTtm;
   return [
-    ...annual.slice(-9),
+    ...annual.slice(-10),
     {
       ...latest,
       adjustedPrice: dataset.currentMarket?.price,
@@ -559,18 +667,19 @@ export function FundamentalsWorkbench() {
     const changingSecurity = Boolean(
       dataset && dataset.companyCode !== normalized.code,
     );
-    if (changingSecurity) {
-      setDataset(null);
-      setAnalysis(null);
-      window.localStorage.removeItem(DATASET_STORAGE_KEY);
-      window.localStorage.removeItem(ANALYSIS_STORAGE_KEY);
-    }
+    // A deliberate lookup must never keep showing a cached result while the
+    // fresh official-report response is being fetched, including same-stock
+    // refreshes after the market data source has changed.
+    setDataset(null);
+    setAnalysis(null);
+    window.localStorage.removeItem(DATASET_STORAGE_KEY);
+    window.localStorage.removeItem(ANALYSIS_STORAGE_KEY);
     setStockCode(normalized.code);
     setLookup(null);
-    if (changingSecurity) setExtraction(null);
+    setExtraction(null);
     setAiReport(null);
     setConfirmedAiRules(new Set());
-    setConfirmedCompanyTypes([]);
+    if (changingSecurity) setConfirmedCompanyTypes([]);
     setLookupLoading(true);
     setLoadingStage('locating');
     setNotice({
@@ -592,7 +701,7 @@ export function FundamentalsWorkbench() {
       setLoadingStage('extracting');
       setNotice({
         tone: 'good',
-        text: `已确认${locatedLookup.company.companyName}并找到${locatedLookup.reports.length}份定期报告，正在抽取财务数据。`,
+        text: `已确认${locatedLookup.company.companyName}，正在从官方定期报告读取并核验数据。`,
       });
 
       const fundamentalsResponse = await fetch(
@@ -607,8 +716,8 @@ export function FundamentalsWorkbench() {
       setExtraction(body.extraction);
       setAnalysis(body.analysis);
       cacheLookup(body.lookup);
-      if (body.dataset) {
-        const nextDataset = normalizeDataset(body.dataset);
+      const nextDataset = body.dataset ? normalizeDataset(body.dataset) : null;
+      if (nextDataset) {
         setDataset(nextDataset);
         if (nextDataset.annual.length >= 10) {
           window.localStorage.setItem(
@@ -631,8 +740,8 @@ export function FundamentalsWorkbench() {
       setNotice({
         tone:
           body.dataset && body.dataset.annual.length >= 10 ? 'good' : 'warn',
-        text: body.dataset
-          ? `已从${body.lookup.source.name}确认${body.lookup.company.companyName}，并从 ${body.extraction.parsedReports} 份定期报告取得 ${body.extraction.annualYears} 个年度、${body.extraction.quarterlyPeriods || body.extraction.halfYearPeriods}个${body.lookup.company.market === 'HK' ? '半年期' : '还原单季度'}数据点。最新报告期为 ${body.extraction.latestReportPeriod ?? '未知'}。${!body.extraction.complete ? '数据不完整，不进入正式总分。' : ''}`
+        text: nextDataset
+          ? `已从${body.lookup.source.name}确认${body.lookup.company.companyName}，共统计到 ${countCollectedDataPoints(nextDataset)} 个有效数据。最新报告期为 ${body.extraction.latestReportPeriod ?? '未知'}。${!body.extraction.complete ? '数据不完整，只作初步分析。' : ''}`
           : `已确认${body.lookup.company.companyName}，但年报数字尚未通过自动抽取。`,
       });
     } catch (error) {
@@ -715,6 +824,8 @@ export function FundamentalsWorkbench() {
         : [],
     [analysis, confirmedCompanyTypes],
   );
+  const collectedDataCount = dataset ? countCollectedDataPoints(dataset) : 0;
+  const currentScoreInsight = scoreInsight(combinedScore);
 
   async function requestAiAnalysis() {
     if (!dataset || !analysis) return;
@@ -774,12 +885,12 @@ export function FundamentalsWorkbench() {
             >
               概览
             </a>
-            <a
+            <Link
               className="flex h-full items-center border-b-2 border-transparent px-3 text-[var(--ds-text-secondary)] hover:text-[var(--ds-text-primary)]"
-              href="#rules"
+              href="/rules"
             >
-              规则 53
-            </a>
+              规则参考
+            </Link>
             <a
               className="flex h-full items-center border-b-2 border-transparent px-3 text-[var(--ds-text-secondary)] hover:text-[var(--ds-text-primary)]"
               href="#financials"
@@ -798,12 +909,6 @@ export function FundamentalsWorkbench() {
             >
               来源
             </a>
-            <Link
-              className="px-3 text-[var(--ds-text-secondary)] hover:text-[var(--ds-text-primary)]"
-              href="/rules"
-            >
-              完整规则库
-            </Link>
             <Button
               type="button"
               variant="ghost"
@@ -820,7 +925,7 @@ export function FundamentalsWorkbench() {
 
       <div className="research-tape" aria-label="研究工作流状态">
         <div className="mx-auto flex min-w-max max-w-[1600px] items-center px-4 lg:px-6">
-          <TapeItem label="研究框架" value="53 条规则" />
+          <TapeItem label="评分标准" value="100 分制" />
           <TapeItem label="主要数据" value="官方定期报告" tone="evidence" />
           <TapeItem label="判断方式" value="程序计算 + 人工确认" />
           <TapeItem
@@ -1023,8 +1128,7 @@ export function FundamentalsWorkbench() {
                         <p className="mt-1 text-xs text-muted-foreground">
                           {lookup.company.market === 'HK' ? '港股' : 'A股'} ·{' '}
                           {lookup.company.exchange} · 交易币种{' '}
-                          {lookup.company.currency} · 已找到{' '}
-                          {lookup.reports.length} 个报告期 · 查询时间{' '}
+                          {lookup.company.currency} · 官方来源已确认 · 查询时间{' '}
                           {lookup.source.retrievedAt.slice(0, 10)}
                         </p>
                         {lookup.company.ahPairCode && (
@@ -1045,27 +1149,13 @@ export function FundamentalsWorkbench() {
                         <ExternalLink className="size-3.5" />
                       </a>
                     </div>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                      <LookupCount
-                        label="完整年报"
-                        value={lookup.coverage.annual}
-                        target={lookup.reportingPolicy.annualTarget}
-                      />
-                      <LookupCount
-                        label="中期报告"
-                        value={lookup.coverage.halfYear}
-                        target={
-                          lookup.reportingPolicy.halfYearTarget || undefined
-                        }
-                      />
-                      <LookupCount
-                        label={
-                          lookup.company.market === 'HK'
-                            ? '实际季报'
-                            : '一季报／三季报原始披露'
-                        }
-                        value={lookup.coverage.quarterly}
-                      />
+                    <div className="mt-3 rounded-md border border-[var(--ds-border-subtle)] bg-[var(--ds-surface-subtle)] px-4 py-3">
+                      <p className="text-sm font-medium">
+                        官方定期报告来源已确认
+                      </p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        具体报告类型与清单放在下方折叠区，需要追溯时再查看。
+                      </p>
                     </div>
                     <p className="mt-3 text-xs leading-5 text-muted-foreground">
                       {lookup.reportingPolicy.note}
@@ -1085,19 +1175,13 @@ export function FundamentalsWorkbench() {
                     {extraction && (
                       <div className="mt-3 rounded-lg border border-[var(--ds-success)]/40 bg-[var(--ds-success-bg)] px-3 py-2 text-xs leading-5 text-[var(--ds-success)]">
                         <p className="font-medium">
-                          年报抽取 {extraction.parsedReports}/
-                          {extraction.requestedReports} 份 · 已形成{' '}
-                          {extraction.annualYears} 个年度
+                          已统计{' '}
+                          {dataset
+                            ? collectedDataCount
+                            : extraction.audit.financialValuesChecked +
+                              extraction.audit.priceValuesChecked}{' '}
+                          个可核验数据点
                         </p>
-                        {extraction.audit && (
-                          <p className="mt-1">
-                            一致性复核：
-                            {extraction.audit.financialValuesChecked} 个财务值 ·{' '}
-                            {extraction.audit.priceValuesChecked} 个股价值 ·{' '}
-                            {extraction.audit.derivedFormulasChecked} 个派生公式
-                            · {extraction.audit.sourceLinksChecked} 条来源定位
-                          </p>
-                        )}
                         {extraction.warnings.length > 0 && (
                           <details className="mt-2 text-[var(--ds-success)]">
                             <summary className="cursor-pointer font-medium">
@@ -1114,7 +1198,7 @@ export function FundamentalsWorkbench() {
                     )}
                     <details className="mt-3 rounded-lg border border-[var(--ds-border-subtle)] bg-[var(--ds-surface-subtle)] px-3 py-2">
                       <summary className="cursor-pointer text-sm font-medium text-[var(--ds-text-primary)]">
-                        查看 {lookup.reports.length} 份官方报告清单
+                        查看官方报告清单
                       </summary>
                       <div className="mt-3 max-h-72 space-y-2 overflow-auto pr-1">
                         {lookup.reports.map((report) => (
@@ -1220,79 +1304,16 @@ export function FundamentalsWorkbench() {
             )}
           </section>
 
-          <section className="ds-kpi-strip grid grid-cols-2 xl:grid-cols-4">
+          <section className="ds-kpi-strip grid grid-cols-1">
             <StatusCard
-              label="官方年报"
-              value={
-                dataset
-                  ? Math.min(dataset.annual.length, 10)
-                  : (lookup?.coverage.annual ?? 0)
-              }
+              label="已统计有效数据"
+              value={`${collectedDataCount} 个`}
               note={
-                datasetComplete
-                  ? '已进入图表数据'
-                  : dataset
-                    ? '数据不完整'
-                    : '目标10个完整年度'
-              }
-            />
-            <StatusCard
-              label={activeMarket === 'HK' ? '官方中报' : '中报与季报'}
-              value={
                 dataset
-                  ? activeMarket === 'HK'
-                    ? (dataset.halfYear?.length ?? 0)
-                    : dataset.quarterly.length
+                  ? '财务与行情数字均经过报告期、格式和来源检查；详细分类仅在追溯区查看。'
                   : lookup
-                    ? lookup.coverage.halfYear + lookup.coverage.quarterly
-                    : 0
-              }
-              note={
-                dataset
-                  ? activeMarket === 'HK'
-                    ? `已读取${dataset.halfYear?.length ?? 0}个半年期`
-                    : `已还原${dataset.quarterly.length}个单季度`
-                  : activeMarket === 'HK'
-                    ? '10个半年期；季报按实际披露'
-                    : '用于还原最近12个单季度'
-              }
-            />
-            <StatusCard
-              label="年末股价"
-              value={
-                dataset
-                  ? dataset.annual.filter(
-                      (point) => typeof point.adjustedPrice === 'number',
-                    ).length || '未取得'
-                  : '—'
-              }
-              note={
-                dataset?.priceSource
-                  ? `前复权 · ${dataset.priceSource.name}`
-                  : dataset
-                    ? '行情源未返回，可重新研究'
-                    : '查询后显示'
-              }
-            />
-            <StatusCard
-              label="数据状态"
-              value={
-                fullyComplete
-                  ? '可画图'
-                  : dataset
-                    ? '数据不完整'
-                    : lookup
-                      ? '报告已定位'
-                      : '等待代码'
-              }
-              note={
-                fullyComplete
-                  ? `口径 ${dataset?.metricVersion ?? '未知'}`
-                  : dataset
-                    ? `只取得${dataset.annual.length}年，不能正式分析`
-                    : lookup
-                      ? '等待自动抽表与来源核对'
-                      : '不会使用示例数据'
+                    ? '正在读取并核验数据，完成后显示总数。'
+                    : '输入股票代码后显示可用数据总数。'
               }
             />
           </section>
@@ -1317,7 +1338,7 @@ export function FundamentalsWorkbench() {
             <p className="mt-3 border-t border-[var(--ds-border-subtle)] pt-3 text-xs leading-5 text-[var(--ds-text-tertiary)]">
               {dataset
                 ? fullyComplete
-                  ? `年报、中期报告和16条程序规则已进入标准数据。图表最新可比点为${dataset.latestComparablePoint?.period ?? dataset.latestReportPeriod}；行情未取得时会单独标明。`
+                  ? `官方定期报告与程序规则已进入标准数据。图表最新可比点为${dataset.latestComparablePoint?.period ?? dataset.latestReportPeriod}；行情未取得时会单独标明。`
                   : `当前为部分数据：${dataset.annual.length}年、${activeMarket === 'HK' ? `${dataset.halfYear?.length ?? 0}个半年期` : `${dataset.quarterly.length}个还原单季度`}；允许查看，不标记为完整正式分析。`
                 : lookup
                   ? '公司和官方报告已确认；财务表格抽取完成前不显示分数。'
@@ -1412,39 +1433,65 @@ export function FundamentalsWorkbench() {
               <Card className="finance-score-card border-l-4 border-l-[var(--ds-accent)]">
                 <CardHeader className="ds-panel-heading">
                   <CardTitle className="text-sm font-semibold">
-                    林奇匹配暂定分·程序阶段
+                    综合评分
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-4">
-                  <div className="flex items-end gap-3">
-                    <span className="text-4xl font-semibold tracking-tight text-[var(--ds-text-primary)]">
-                      {fullyComplete &&
-                      !activeFinancial &&
-                      confirmedCompanyTypes.length > 0 &&
-                      combinedScore?.score != null
-                        ? combinedScore.score.toFixed(1)
-                        : '—'}
-                    </span>
-                    <span className="pb-1 text-xs text-[var(--ds-text-tertiary)]">
-                      / 100
-                    </span>
+                  <div className="flex flex-wrap items-end justify-between gap-3">
+                    <div className="flex items-end gap-3">
+                      <span className="text-4xl font-semibold tracking-tight text-[var(--ds-text-primary)]">
+                        {!activeFinancial && combinedScore?.score != null
+                          ? Math.round(combinedScore.score)
+                          : '—'}
+                      </span>
+                      <span className="pb-1 text-xs text-[var(--ds-text-tertiary)]">
+                        / 100
+                      </span>
+                    </div>
+                    <Badge className="rounded-sm bg-[var(--ds-info-bg)] text-[var(--ds-accent)] hover:bg-[var(--ds-info-bg)]">
+                      {activeFinancial ? '不评级' : currentScoreInsight.grade}
+                    </Badge>
                   </div>
-                  <p className="mt-3 text-xs leading-5 text-[var(--ds-text-secondary)]">
+                  <p className="mt-3 text-sm font-medium leading-6 text-[var(--ds-text-primary)]">
                     {activeFinancial
                       ? '金融企业不套用普通公司排名，只展示单条证据。'
-                      : confirmedCompanyTypes.length === 0
-                        ? '请先在公司名称右侧确认一个或多个林奇类型，类型专属规则才会启用。'
-                        : combinedScore?.score == null
-                          ? '尚无已验证规则，不用中性基准50冒充有效分数。'
-                          : `只对已有可靠证据的规则计算。证据覆盖率 ${((combinedScore.coverage ?? 0) * 100).toFixed(0)}%；缺失证据只影响覆盖率。`}
+                      : currentScoreInsight.verdict}
                   </p>
-                  <p className="mt-3 rounded-md bg-[var(--ds-surface-subtle)] px-3 py-2 font-mono text-[11px] leading-5 text-[var(--ds-text-tertiary)]">
-                    50 + 50 ×（正向数 − 风险数）÷ 已有证据规则数
+                  {combinedScore?.score != null && (
+                    <div className="mt-4">
+                      <div className="relative h-2 overflow-hidden rounded-full bg-[var(--ds-border-subtle)]">
+                        <div
+                          className="h-full rounded-full bg-[var(--ds-accent)]"
+                          style={{
+                            width: `${Math.max(0, Math.min(100, combinedScore.score))}%`,
+                          }}
+                        />
+                      </div>
+                      <div className="mt-1 flex justify-between text-[10px] text-[var(--ds-text-tertiary)]">
+                        <span>0 高风险</span>
+                        <span>50 一般</span>
+                        <span>65 良好</span>
+                        <span>80 优秀</span>
+                        <span>100</span>
+                      </div>
+                    </div>
+                  )}
+                  <p className="mt-3 rounded-md bg-[var(--ds-surface-subtle)] px-3 py-2 text-xs leading-5 text-[var(--ds-text-secondary)]">
+                    证据覆盖率{' '}
+                    {((combinedScore?.coverage ?? 0) * 100).toFixed(0)}% ·{' '}
+                    {currentScoreInsight.comparability}
+                    {confirmedCompanyTypes.length === 0
+                      ? ' · 尚未确认公司类型，类型专属规则暂未启用'
+                      : ''}
                   </p>
-                  <div className="mt-4 grid grid-cols-3 divide-x divide-[var(--ds-border-subtle)] border-t border-[var(--ds-border-subtle)] pt-3 text-center text-xs">
+                  <div className="mt-4 grid grid-cols-4 divide-x divide-[var(--ds-border-subtle)] border-t border-[var(--ds-border-subtle)] pt-3 text-center text-xs">
                     <ScoreCount
                       label="正向"
                       value={combinedScore?.positiveCount ?? 0}
+                    />
+                    <ScoreCount
+                      label="中性"
+                      value={combinedScore?.neutralCount ?? 0}
                     />
                     <ScoreCount
                       label="风险"
@@ -1460,12 +1507,15 @@ export function FundamentalsWorkbench() {
               <Card>
                 <CardHeader className="ds-panel-heading">
                   <CardTitle className="text-sm font-semibold">
-                    规则证据覆盖
+                    怎么和其他股票比较
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm leading-6 text-muted-foreground">
-                    规则详情已按估值、财务安全、经营质量和公司事件分组。展开后可查看原文、公式、本次代入、历年数字及报告来源。
+                    所有股票使用同一套100分尺度：80分以上进入优选研究区，65—79分值得继续研究，50—64分表现一般，50分以下风险证据占优。
+                  </p>
+                  <p className="mt-2 text-xs leading-5 text-[var(--ds-text-tertiary)]">
+                    这是同一规则库与同一公式下的横向初筛；公司类型与证据充足度会改变有效规则数，不冒充实时全市场百分位排名。
                   </p>
                   <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
                     <CoverageCount
@@ -1486,7 +1536,7 @@ export function FundamentalsWorkbench() {
                     />
                   </div>
                   <p className="mt-4 rounded-md bg-[var(--ds-warning-bg)] px-3 py-2 text-xs leading-5 text-[var(--ds-warning)]">
-                    当前缺失主要来自股息、回购、内部人士、机构覆盖、客户依赖和同行比较；这些空缺不会用估算值补齐。
+                    横向比较必须同时看证据覆盖率。覆盖率低于60%的分数只作初筛；当前缺失的回购、内部人士等事件可在“补充研判”中检索最近一年证据，再由你确认。
                   </p>
                 </CardContent>
               </Card>
@@ -1494,15 +1544,6 @@ export function FundamentalsWorkbench() {
           )}
 
           {dataset && <DebtStructurePanel dataset={dataset} />}
-
-          {dataset && analysis && (
-            <RuleAnalysisPanel
-              dataset={dataset}
-              analysis={analysis}
-              results={effectiveProgramResults}
-              companyTypes={confirmedCompanyTypes}
-            />
-          )}
 
           {dataset ? (
             <>
@@ -1531,6 +1572,7 @@ export function FundamentalsWorkbench() {
                       data={chartData.get(definition.id) ?? []}
                       financialCurrency={dataset?.currency}
                       priceCurrency={dataset?.security?.currency}
+                      priceAdjustment={dataset.priceAdjustment}
                     />
                   ))}
                 </div>
@@ -1551,106 +1593,117 @@ export function FundamentalsWorkbench() {
                       <div className="max-h-[32rem] space-y-2 overflow-auto pr-1">
                         {[
                           ...dataset.annual,
+                          ...(dataset.halfYear ?? []),
+                          ...dataset.quarterly,
                           ...(dataset.latestComparablePoint
                             ? [dataset.latestComparablePoint]
                             : []),
-                        ].map((point) => {
-                          const reports = dataset.reportRefs.filter((ref) =>
-                            point.reportRefIds.includes(ref.id),
-                          );
-                          return (
-                            <details
-                              key={point.period}
-                              className="rounded-lg border border-[var(--ds-border-subtle)] bg-[var(--ds-surface-subtle)] px-3 py-2 text-sm"
-                            >
-                              <summary
-                                aria-label={`查看${tracePeriodLabel(point)}数据来源`}
-                                className="cursor-pointer list-none"
+                        ]
+                          .filter(
+                            (point, index, points) =>
+                              points.findIndex(
+                                (candidate) =>
+                                  candidate.period === point.period,
+                              ) === index,
+                          )
+                          .map((point) => {
+                            const reports = dataset.reportRefs.filter((ref) =>
+                              point.reportRefIds.includes(ref.id),
+                            );
+                            return (
+                              <details
+                                key={point.period}
+                                className="rounded-lg border border-[var(--ds-border-subtle)] bg-[var(--ds-surface-subtle)] px-3 py-2 text-sm"
                               >
-                                <div className="flex items-start justify-between gap-3">
-                                  <span className="font-mono font-medium">
-                                    {tracePeriodLabel(point)}
-                                  </span>
-                                  <span className="text-right text-xs text-muted-foreground">
-                                    {sourcePeriodLabel(point, reports)}
-                                  </span>
-                                </div>
-                              </summary>
-                              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                                {Object.entries(point.metricSources ?? {})
-                                  .filter(([key]) => traceMetricLabels[key])
-                                  .map(([key, source]) => {
-                                    const value = point[key];
-                                    return (
-                                      <div
-                                        key={key}
-                                        className="rounded-md bg-[var(--ds-surface-elevated)] px-3 py-2"
-                                      >
-                                        <div className="flex items-baseline justify-between gap-2">
-                                          <span className="text-xs text-muted-foreground">
-                                            {traceMetricLabels[key]}
-                                          </span>
-                                          <span className="font-mono text-xs">
-                                            {typeof value === 'number'
-                                              ? formatMetricValue(
-                                                  value,
-                                                  key,
-                                                  dataset.currency,
-                                                  dataset.security?.currency ??
+                                <summary
+                                  aria-label={`查看${tracePeriodLabel(point)}数据来源`}
+                                  className="cursor-pointer list-none"
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <span className="font-mono font-medium">
+                                      {tracePeriodLabel(point)}
+                                    </span>
+                                    <span className="text-right text-xs text-muted-foreground">
+                                      {sourcePeriodLabel(point, reports)}
+                                    </span>
+                                  </div>
+                                </summary>
+                                <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                                  {Object.entries(point.metricSources ?? {})
+                                    .filter(([key]) => traceMetricLabels[key])
+                                    .map(([key, source]) => {
+                                      const value = point[key];
+                                      return (
+                                        <div
+                                          key={key}
+                                          className="rounded-md bg-[var(--ds-surface-elevated)] px-3 py-2"
+                                        >
+                                          <div className="flex items-baseline justify-between gap-2">
+                                            <span className="text-xs text-muted-foreground">
+                                              {traceMetricLabels[key]}
+                                            </span>
+                                            <span className="font-mono text-xs">
+                                              {typeof value === 'number'
+                                                ? formatMetricValue(
+                                                    value,
+                                                    key,
                                                     dataset.currency,
-                                                )
-                                              : '缺失'}
-                                          </span>
-                                        </div>
-                                        <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
-                                          {source.page
-                                            ? `第${(source.pages ?? [source.page]).join('、')}页 · `
-                                            : source.date
-                                              ? `${source.date} · `
+                                                    dataset.security
+                                                      ?.currency ??
+                                                      dataset.currency,
+                                                  )
+                                                : '缺失'}
+                                            </span>
+                                          </div>
+                                          <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
+                                            {source.page
+                                              ? `第${(source.pages ?? [source.page]).join('、')}页 · `
+                                              : source.date
+                                                ? `${source.date} · `
+                                                : ''}
+                                            {source.label}
+                                            {source.formula
+                                              ? ` · ${source.formula}`
                                               : ''}
-                                          {source.label}
-                                          {source.formula
-                                            ? ` · ${source.formula}`
-                                            : ''}
-                                        </p>
-                                        {source.sourceUrl && (
+                                          </p>
+                                          {source.sourceUrl && (
+                                            <a
+                                              href={source.sourceUrl}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="mt-1 inline-flex items-center gap-1 text-[10px] text-[var(--ds-accent)] hover:underline"
+                                            >
+                                              {source.sourceName ??
+                                                '打开数据来源'}{' '}
+                                              <ExternalLink className="size-3" />
+                                            </a>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                </div>
+                                {reports.some((report) => report.sourceUrl) && (
+                                  <div className="mt-3 flex flex-wrap gap-3">
+                                    {reports.map(
+                                      (report) =>
+                                        report.sourceUrl && (
                                           <a
-                                            href={source.sourceUrl}
+                                            key={report.id}
+                                            href={report.sourceUrl}
                                             target="_blank"
                                             rel="noreferrer"
-                                            className="mt-1 inline-flex items-center gap-1 text-[10px] text-[var(--ds-accent)] hover:underline"
+                                            className="inline-flex items-center gap-1 text-xs text-[var(--ds-accent)] hover:underline"
                                           >
-                                            {source.sourceName ??
-                                              '打开数据来源'}{' '}
+                                            {report.title}{' '}
                                             <ExternalLink className="size-3" />
                                           </a>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                              </div>
-                              {reports.some((report) => report.sourceUrl) && (
-                                <div className="mt-3 flex flex-wrap gap-3">
-                                  {reports.map(
-                                    (report) =>
-                                      report.sourceUrl && (
-                                        <a
-                                          key={report.id}
-                                          href={report.sourceUrl}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="inline-flex items-center gap-1 text-xs text-[var(--ds-accent)] hover:underline"
-                                        >
-                                          {report.title}{' '}
-                                          <ExternalLink className="size-3" />
-                                        </a>
-                                      ),
-                                  )}
-                                </div>
-                              )}
-                            </details>
-                          );
-                        })}
+                                        ),
+                                    )}
+                                  </div>
+                                )}
+                              </details>
+                            );
+                          })}
                       </div>
                     )}
                   </CardContent>
@@ -1666,7 +1719,7 @@ export function FundamentalsWorkbench() {
                         补充研判（可选）
                       </CardTitle>
                       <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                        用于整理公司类型、定性信息和反方观点。程序计算结果不受影响，未经你确认的判断不会进入综合结果。
+                        先用财报证据；不足时补查最近365天公告与新闻。每条来源可打开核验，未经你确认的判断不会进入综合结果。
                       </p>
                     </div>
                     <Button
@@ -1680,12 +1733,12 @@ export function FundamentalsWorkbench() {
                       ) : (
                         <Sparkles className="size-4" />
                       )}
-                      {aiLoading ? '整理中' : '生成补充研判'}
+                      {aiLoading ? '检索与整理中' : '补查近一年证据'}
                     </Button>
                   </CardHeader>
                   <CardContent>
                     {!aiReport ? (
-                      <EmptyLine text="扩展分析服务未配置。程序结果可以独立使用；配置服务后，可补充公司分类、定性观点和反方审计。" />
+                      <EmptyLine text="需要补充回购、内部人士等定性证据时，可检索最近365天公告与新闻；程序评分可独立使用。" />
                     ) : (
                       <div className="space-y-4">
                         <div className="grid gap-3 md:grid-cols-3">
@@ -1759,6 +1812,25 @@ export function FundamentalsWorkbench() {
                                     <p className="mt-1 text-xs leading-5 text-muted-foreground">
                                       {suggestion.rationale}
                                     </p>
+                                    {(suggestion.sources?.length ?? 0) > 0 && (
+                                      <div className="mt-2 space-y-1">
+                                        {suggestion.sources.map((source) => (
+                                          <a
+                                            key={`${suggestion.ruleId}-${source.url}`}
+                                            href={source.url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="flex items-start gap-1 text-[10px] leading-4 text-[var(--ds-accent)] hover:underline"
+                                          >
+                                            <ExternalLink className="mt-0.5 size-3 shrink-0" />
+                                            <span>
+                                              {source.publishedAt} ·{' '}
+                                              {source.title}
+                                            </span>
+                                          </a>
+                                        ))}
+                                      </div>
+                                    )}
                                     <p className="mt-1 text-[10px] text-[var(--ds-warning)]">
                                       {confirmed
                                         ? '已由用户确认纳入'
@@ -1788,12 +1860,30 @@ export function FundamentalsWorkbench() {
                       图表不是评分本身
                     </p>
                     <p className="mt-1 text-sm leading-6 text-[var(--ds-text-secondary)]">
-                      程序规则只按锁定公式给出
-                      +1、0、-1、不适用或证据不足。14条定性判断需要人工确认，未确认前不进入综合结果。
+                      图表帮助理解趋势；总分只使用可验证规则。定性判断需要你确认，未确认前不进入综合评分。
                     </p>
                   </div>
                 </div>
               </section>
+
+              {analysis && (
+                <section id="rules" className="scroll-mt-32 space-y-3">
+                  <div>
+                    <p className="ds-eyebrow">报告末尾 · 评分依据</p>
+                    <h2 className="mt-1 text-[17px] font-semibold tracking-tight">
+                      单条规则与证据
+                    </h2>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      这里是参考与复核区，不打断前面的结论、数据和图表阅读。
+                    </p>
+                  </div>
+                  <RuleAnalysisPanel
+                    dataset={dataset}
+                    analysis={analysis}
+                    results={effectiveProgramResults}
+                  />
+                </section>
+              )}
             </>
           ) : (
             <ResearchModuleMap state={lookup ? 'located' : 'waiting'} />
@@ -2378,6 +2468,7 @@ function FundamentalChart({
   data,
   financialCurrency,
   priceCurrency,
+  priceAdjustment,
 }: {
   definition: {
     id: string;
@@ -2386,16 +2477,28 @@ function FundamentalChart({
     kind: 'line' | 'bar';
     defaultView?: 'chart' | 'table';
     tableOnly?: boolean;
+    auditLabel: string;
+    originalBasis: string;
     series: { key: string; label: string; color: string }[];
   };
   data: MetricPoint[];
   financialCurrency?: string;
   priceCurrency?: string;
+  priceAdjustment?: AnalysisDataset['priceAdjustment'];
 }) {
   const [view, setView] = useState<'chart' | 'table'>(
     definition.defaultView ?? 'chart',
   );
-  const availableSeries = definition.series.filter((series) =>
+  const resolvedSeries = definition.series.map((series) =>
+    series.key === 'adjustedPrice'
+      ? {
+          ...series,
+          label:
+            priceAdjustment === 'forward' ? '年末前复权股价' : '年末未复权股价',
+        }
+      : series,
+  );
+  const availableSeries = resolvedSeries.filter((series) =>
     data.some((point) => typeof point[series.key] === 'number'),
   );
   const usable = availableSeries.length > 0;
@@ -2408,12 +2511,34 @@ function FundamentalChart({
   const amountChart = ['growth', 'cash-debt', 'fcf'].includes(definition.id);
   const dualAxis = ['growth', 'price-eps', 'valuation'].includes(definition.id);
   const priceEpsChart = definition.id === 'price-eps';
-  const missingSeries = definition.series.filter(
+  const missingSeries = resolvedSeries.filter(
     (series) => !data.some((point) => typeof point[series.key] === 'number'),
   );
+  const derivedKeys = new Set([
+    'inventoryGrowth',
+    'revenueGrowth',
+    'growth',
+    'pe',
+    'earningsGrowth',
+    'lynchValuationRatio',
+  ]);
+  const expectedValues = data.length * resolvedSeries.length;
+  const plottedValues = data.flatMap((point) =>
+    resolvedSeries
+      .filter((series) => typeof point[series.key] === 'number')
+      .map((series) => ({ point, key: series.key })),
+  );
+  const verifiedValues = plottedValues.filter(
+    ({ point, key }) =>
+      point.reportRefIds.length > 0 &&
+      (Boolean(point.metricSources?.[key]) || derivedKeys.has(key)),
+  ).length;
 
   return (
-    <Card className="overflow-hidden">
+    <Card
+      id={`chart-${definition.id}`}
+      className="scroll-mt-24 overflow-hidden"
+    >
       <CardHeader className="ds-panel-heading flex flex-col items-start justify-between gap-3 sm:flex-row sm:gap-4">
         <div className="min-w-0">
           <CardTitle className="text-base font-semibold tracking-tight">
@@ -2423,43 +2548,55 @@ function FundamentalChart({
             {definition.description}
           </p>
         </div>
-        {definition.tableOnly ? (
-          <Badge
-            variant="outline"
-            className="shrink-0 bg-[var(--ds-surface-subtle)] text-[var(--ds-text-secondary)]"
-          >
-            表格呈现
-          </Badge>
-        ) : (
-          <div className="print-hidden flex shrink-0 rounded-md border border-[var(--ds-border-subtle)] bg-[var(--ds-surface-subtle)] p-0.5">
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              aria-pressed={view === 'chart'}
-              className={`h-7 rounded-sm gap-1 px-2 text-xs ${view === 'chart' ? 'bg-[var(--ds-surface-selected)] text-[var(--ds-text-primary)] shadow-none hover:bg-[var(--ds-surface-selected)]' : 'text-[var(--ds-text-tertiary)]'}`}
-              onClick={() => setView('chart')}
+        <div className="print-hidden flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {usable && (
+            <Badge
+              variant="outline"
+              className="rounded-sm border-[var(--ds-success)]/30 bg-[var(--ds-success-bg)] text-[var(--ds-success)]"
             >
-              <ChartNoAxesCombined className="size-3.5" /> 图
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              aria-pressed={view === 'table'}
-              className={`h-7 rounded-sm gap-1 px-2 text-xs ${view === 'table' ? 'bg-[var(--ds-surface-selected)] text-[var(--ds-text-primary)] shadow-none hover:bg-[var(--ds-surface-selected)]' : 'text-[var(--ds-text-tertiary)]'}`}
-              onClick={() => setView('table')}
+              已核验 {verifiedValues}/{expectedValues} 点
+            </Badge>
+          )}
+          {definition.tableOnly ? (
+            <Badge
+              variant="outline"
+              className="shrink-0 bg-[var(--ds-surface-subtle)] text-[var(--ds-text-secondary)]"
             >
-              <Table2 className="size-3.5" /> 表
-            </Button>
-          </div>
-        )}
+              表格呈现
+            </Badge>
+          ) : (
+            <div className="print-hidden flex shrink-0 rounded-md border border-[var(--ds-border-subtle)] bg-[var(--ds-surface-subtle)] p-0.5">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-pressed={view === 'chart'}
+                className={`h-7 rounded-sm gap-1 px-2 text-xs ${view === 'chart' ? 'bg-[var(--ds-surface-selected)] text-[var(--ds-text-primary)] shadow-none hover:bg-[var(--ds-surface-selected)]' : 'text-[var(--ds-text-tertiary)]'}`}
+                onClick={() => setView('chart')}
+              >
+                <ChartNoAxesCombined className="size-3.5" /> 图
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-pressed={view === 'table'}
+                className={`h-7 rounded-sm gap-1 px-2 text-xs ${view === 'table' ? 'bg-[var(--ds-surface-selected)] text-[var(--ds-text-primary)] shadow-none hover:bg-[var(--ds-surface-selected)]' : 'text-[var(--ds-text-tertiary)]'}`}
+                onClick={() => setView('table')}
+              >
+                <Table2 className="size-3.5" /> 表
+              </Button>
+            </div>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         {priceEpsChart && usable && (
           <p className="mb-2 text-[11px] text-muted-foreground">
             左轴：股价（{priceCurrency ?? '交易币种'}/股） · 右轴：每股收益（
-            {financialCurrency ?? '财报币种'}/股）
+            {financialCurrency ?? '财报币种'}/股） · 历史股价
+            {priceAdjustment === 'forward' ? '前复权' : '未复权'}
+            ；最右端为行情日最新价格
           </p>
         )}
         {usable && missingSeries.length > 0 && (
@@ -2573,38 +2710,26 @@ function FundamentalChart({
             )}
           </ChartContainer>
         )}
+        <div className="mt-4 border-t border-[var(--ds-border-subtle)] pt-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant="outline"
+              className="rounded-sm bg-[var(--ds-surface-subtle)] text-[var(--ds-text-secondary)]"
+            >
+              原文核对：{definition.auditLabel}
+            </Badge>
+            {expectedValues > 0 && verifiedValues < expectedValues && (
+              <span className="text-[11px] text-[var(--ds-warning)]">
+                仍有 {expectedValues - verifiedValues} 个数据点缺少完整来源
+              </span>
+            )}
+          </div>
+          <p className="mt-2 text-[11px] leading-5 text-[var(--ds-text-tertiary)]">
+            {definition.originalBasis}
+          </p>
+        </div>
       </CardContent>
     </Card>
-  );
-}
-
-function LookupCount({
-  label,
-  value,
-  target,
-}: {
-  label: string;
-  value: number;
-  target?: number;
-}) {
-  const complete = target ? value >= target : value > 0;
-  return (
-    <div className="rounded-md border border-[var(--ds-border-subtle)] bg-[var(--ds-surface-subtle)] px-3 py-2">
-      <p className="text-[11px] text-muted-foreground">{label}</p>
-      <div className="mt-1 flex items-baseline gap-1">
-        <span className="font-mono text-2xl font-semibold tabular-nums text-[var(--ds-text-primary)]">
-          {value}
-        </span>
-        {target && (
-          <span className="text-[10px] text-muted-foreground">/ {target}</span>
-        )}
-        <span
-          className={`ml-auto text-[10px] ${complete ? 'text-[var(--ds-success)]' : 'text-[var(--ds-warning)]'}`}
-        >
-          {complete ? '已覆盖' : target ? '不足' : '未披露'}
-        </span>
-      </div>
-    </div>
   );
 }
 

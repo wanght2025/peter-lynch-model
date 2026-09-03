@@ -477,6 +477,7 @@ export async function buildAnnualDataset(
 
   let priceResult: Awaited<ReturnType<typeof attachAnnualPrices>> = {
     priceSource: undefined,
+    priceAdjustment: 'none',
     priceDate: '',
     warnings: [],
   };
@@ -512,7 +513,7 @@ export async function buildAnnualDataset(
         quarterly,
         reportingPolicy: lookup.reportingPolicy,
         priceDate: currentMarket?.date ?? priceResult.priceDate,
-        priceAdjustment: priceResult.priceSource ? 'forward' : 'none',
+        priceAdjustment: priceResult.priceAdjustment,
         priceSource: priceResult.priceSource,
         currentMarket,
         latestReportPeriod,

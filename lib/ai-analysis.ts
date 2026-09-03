@@ -5,6 +5,15 @@ export type AiRuleSuggestion = {
   outcome: RuleOutcome;
   rationale: string;
   evidence: string[];
+  sources: Array<{
+    title: string;
+    url: string;
+    publishedAt: string;
+    sourceType:
+      | 'official_disclosure'
+      | 'company_announcement'
+      | 'reputable_news';
+  }>;
 };
 
 export type AiAnalysisReport = {

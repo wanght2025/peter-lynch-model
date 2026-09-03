@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -36,13 +37,8 @@ import type {
   ProgramAnalysis,
   RuleOutcome,
   RuleResult,
-  CompanyType,
 } from '@/lib/analysis-types';
-import {
-  companyTypeLabels,
-  ruleCatalog,
-  type LynchRuleCandidate,
-} from '@/lib/rule-catalog';
+import { ruleCatalog, type LynchRuleCandidate } from '@/lib/rule-catalog';
 import { calculateCagr } from '@/lib/scoring-engine';
 
 type ValueKind =
@@ -84,7 +80,7 @@ const metricLabels: Record<string, string> = {
   'valuation.current_price': '当前股价',
   'balance.equity_ratio': '股东权益率',
   'balance.debt_ratio': '负债率',
-  'cashflow.free': '自由现金流',
+  'cashflow.free': '自由现金流（全部资本支出代理）',
   'growth.inventory_yoy': '存货同比增长率',
   'growth.revenue_yoy': '营业收入同比增长率',
   'margin.pretax': '税前利润率',
@@ -108,7 +104,7 @@ const groups = [
   },
   {
     title: '财务安全与现金回报',
-    description: '资产负债表、现金、债务、自由现金流和股息安全。',
+    description: '资产负债表、现金、债务、自由现金流代理和股息安全。',
     ruleIds: [
       'LYN-13-NET-CASH',
       'LYN-13-BALANCE-SHEET',
@@ -288,6 +284,8 @@ function ruleHistory(
 ): HistoryTable {
   const instant = annualAndLatest(dataset, 'instant');
   const flow = annualAndLatest(dataset, 'flow');
+  const historicalPriceLabel =
+    dataset.priceAdjustment === 'forward' ? '年末前复权价' : '年末未复权价';
   if (['LYN-13-PE-HALF-DOUBLE', 'LYN-10-PE-CONTEXT'].includes(ruleId)) {
     return {
       columns: [
@@ -298,7 +296,7 @@ function ruleHistory(
         { key: 'ratio', label: 'PE/CAGR', kind: 'multiple' },
       ],
       rows: valuationRows(dataset, analysis),
-      note: '完整年度按年末前复权价计算；“当前”行使用最新市价、PE·TTM和最近5个完整年度EPS增长率。',
+      note: `完整年度按${historicalPriceLabel}计算；“当前”行使用最新市价、PE·TTM和最近5个完整年度EPS增长率。`,
     };
   }
   if (ruleId === 'LYN-13-DIVIDEND-PEG') {
@@ -392,7 +390,7 @@ function ruleHistory(
           reportRefIds: point.reportRefIds,
         };
       }),
-      note: '林奇口径＝现金－长期债务；保守代理＝现金－全部有息负债。现金和债务均为报告日时点值，历史比值使用同期年末前复权价，最新比值使用当前股价；原文没有统一比例门槛。',
+      note: `林奇口径＝现金－长期债务；保守代理＝现金－全部有息负债。现金和债务均为报告日时点值，历史比值使用同期${historicalPriceLabel}，最新比值使用当前股价；原文没有统一比例门槛。`,
     };
   }
   if (ruleId === 'LYN-13-BALANCE-SHEET') {
@@ -980,12 +978,10 @@ export function RuleAnalysisPanel({
   dataset,
   analysis,
   results,
-  companyTypes,
 }: {
   dataset: AnalysisDataset;
   analysis: ProgramAnalysis;
   results: RuleResult[];
-  companyTypes: CompanyType[];
 }) {
   const resultMap = new Map(results.map((result) => [result.ruleId, result]));
   return (
@@ -1091,190 +1087,15 @@ export function RuleAnalysisPanel({
           </div>
         ))}
       </div>
-      <FullRuleCatalog companyTypes={companyTypes} />
+      <div className="border-t border-[var(--ds-border-subtle)] bg-[var(--ds-surface-subtle)] px-4 py-3 text-xs text-[var(--ds-text-secondary)]">
+        完整53条规则库已移到独立参考页。{' '}
+        <Link
+          href="/rules"
+          className="font-medium text-[var(--ds-accent)] hover:underline"
+        >
+          打开规则参考
+        </Link>
+      </div>
     </section>
-  );
-}
-
-function FullRuleCatalog({ companyTypes }: { companyTypes: CompanyType[] }) {
-  const sections = [
-    { decision: 'scoring', title: '用于评分', count: 30 },
-    { decision: 'reminder', title: '只做提醒', count: 13 },
-    { decision: 'excluded', title: '明确不采用', count: 10 },
-  ] as const;
-  return (
-    <div className="overflow-hidden border-y border-[var(--ds-border-subtle)] bg-[var(--ds-surface)]">
-      <div className="border-b border-[var(--ds-border-subtle)] bg-[var(--ds-surface)] px-4 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h3 className="text-sm font-semibold">完整规则中心 · 53条</h3>
-            <p className="mt-1 text-[11px] text-[var(--ds-text-tertiary)]">
-              30条进入评分（程序16＋AI与用户确认14），13条提醒，10条因重复、不可执行或不属于个股评分而排除。
-            </p>
-          </div>
-          <div className="flex gap-1 text-[10px]">
-            <Badge variant="outline" className="rounded-sm">
-              程序 16
-            </Badge>
-            <Badge variant="outline" className="rounded-sm">
-              AI＋确认 14
-            </Badge>
-          </div>
-        </div>
-      </div>
-      <div className="grid gap-0 bg-[var(--ds-surface)] xl:grid-cols-3">
-        {sections.map((section, sectionIndex) => {
-          const rules = ruleCatalog.filter(
-            (rule) => rule.decision === section.decision,
-          );
-          return (
-            <div
-              key={section.decision}
-              className={
-                sectionIndex
-                  ? 'border-t border-[var(--ds-border-subtle)] xl:border-t-0 xl:border-l'
-                  : ''
-              }
-            >
-              <div className="flex items-center justify-between border-b border-[var(--ds-border-subtle)] bg-[var(--ds-surface-subtle)] px-3 py-2 text-xs font-medium">
-                <span>{section.title}</span>
-                <span className="font-mono text-[var(--ds-text-tertiary)]">
-                  {rules.length}/{section.count}
-                </span>
-              </div>
-              <div className="max-h-[28rem] overflow-auto">
-                {rules.map((rule) => {
-                  const applicable =
-                    rule.appliesTo.includes('all') ||
-                    companyTypes.some((type) => rule.appliesTo.includes(type));
-                  const pendingType =
-                    section.decision === 'scoring' &&
-                    !rule.appliesTo.includes('all') &&
-                    companyTypes.length === 0;
-                  return (
-                    <Dialog key={rule.id}>
-                      <DialogTrigger
-                        render={
-                          <button
-                            type="button"
-                            aria-label={`查看完整规则：${rule.title}`}
-                            className="flex w-full items-start gap-2 border-b border-[var(--ds-border-subtle)] px-3 py-2.5 text-left hover:bg-[var(--ds-surface-selected)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ds-focus)]"
-                          />
-                        }
-                      >
-                        <span className="mt-1 size-1.5 shrink-0 rounded-full bg-[var(--ds-text-tertiary)]" />
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-xs leading-5">
-                            {rule.title}
-                          </span>
-                          <span className="mt-0.5 flex flex-wrap gap-1 text-[9px] text-[var(--ds-text-tertiary)]">
-                            <span>
-                              {rule.evaluator === 'program'
-                                ? '程序'
-                                : rule.evaluator === 'ai'
-                                  ? 'AI＋确认'
-                                  : '不执行'}
-                            </span>
-                            <span>·</span>
-                            <span>
-                              {pendingType
-                                ? '等待分类'
-                                : applicable
-                                  ? '当前适用'
-                                  : '当前类型不适用'}
-                            </span>
-                          </span>
-                        </span>
-                        <ArrowUpRight className="mt-1 size-3 shrink-0 text-[var(--ds-text-disabled)]" />
-                      </DialogTrigger>
-                      <DialogContent className="finance-dialog max-h-[85vh] overflow-y-auto border-[var(--ds-border-strong)] bg-[var(--ds-canvas)] text-[var(--ds-text-primary)] sm:max-w-2xl">
-                        <DialogHeader>
-                          <div className="flex gap-2">
-                            <Badge variant="outline" className="rounded-sm">
-                              {section.title}
-                            </Badge>
-                            <span className="font-mono text-[10px] text-[var(--ds-text-tertiary)]">
-                              {rule.id}
-                            </span>
-                          </div>
-                          <DialogTitle>{rule.title}</DialogTitle>
-                          <DialogDescription>
-                            {rule.chapter} · {rule.section} · {rule.locator}
-                          </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-3 text-xs leading-6">
-                          <div className="rounded-sm border border-[var(--ds-border-subtle)] bg-[var(--ds-surface-subtle)] p-3">
-                            “{rule.excerpt}”
-                          </div>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <CatalogFact
-                              label="适用类型"
-                              value={rule.appliesTo
-                                .map((type) => companyTypeLabels[type] ?? type)
-                                .join('、')}
-                            />
-                            <CatalogFact
-                              label="执行方式"
-                              value={
-                                rule.evaluator === 'program'
-                                  ? '程序计算'
-                                  : rule.evaluator === 'ai'
-                                    ? 'AI整理证据＋用户确认'
-                                    : '不执行'
-                              }
-                            />
-                            <CatalogFact
-                              label="所需证据"
-                              value={rule.requiredEvidence.join('、') || '无'}
-                            />
-                            <CatalogFact
-                              label="当前状态"
-                              value={
-                                pendingType
-                                  ? '等待公司类型确认'
-                                  : applicable
-                                    ? '适用于当前所选类型'
-                                    : '当前类型不适用'
-                              }
-                            />
-                          </div>
-                          {rule.ambiguity && (
-                            <CatalogFact
-                              label={
-                                section.decision === 'excluded'
-                                  ? '不采用原因'
-                                  : '口径说明'
-                              }
-                              value={rule.ambiguity}
-                            />
-                          )}
-                          {rule.scoreSpec?.formula && (
-                            <CatalogFact
-                              label="公式／判断"
-                              value={rule.scoreSpec.formula}
-                            />
-                          )}
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function CatalogFact({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-[10px] font-medium text-[var(--ds-text-tertiary)]">
-        {label}
-      </p>
-      <p className="mt-0.5 text-xs text-[var(--ds-text-primary)]">{value}</p>
-    </div>
   );
 }
