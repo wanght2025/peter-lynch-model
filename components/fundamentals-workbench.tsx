@@ -689,20 +689,27 @@ export function FundamentalsWorkbench() {
     let locatedLookup: OfficialLookup | null = null;
     let usedCachedLookup = false;
     try {
-      try {
-        const lookupResponse = await fetch(
-          `/api/official-reports?code=${normalized.code}`,
-          { cache: 'no-store' },
-        );
-        locatedLookup = await readApiResponse<OfficialLookup>(
-          lookupResponse,
-          '官方披露查询失败',
-        );
-      } catch (error) {
-        const cached = lookupCache()[`${normalized.market}:${normalized.code}`];
-        if (!cached) throw error;
+      const cached = lookupCache()[`${normalized.market}:${normalized.code}`];
+      const cacheAge =
+        Date.now() - Date.parse(cached?.source.retrievedAt ?? '');
+      if (cached && cacheAge >= 0 && cacheAge < 15 * 60 * 1000) {
         locatedLookup = cached;
         usedCachedLookup = true;
+      } else {
+        try {
+          const lookupResponse = await fetch(
+            `/api/official-reports?code=${normalized.code}`,
+            { cache: 'no-store' },
+          );
+          locatedLookup = await readApiResponse<OfficialLookup>(
+            lookupResponse,
+            '官方披露查询失败',
+          );
+        } catch (error) {
+          if (!cached) throw error;
+          locatedLookup = cached;
+          usedCachedLookup = true;
+        }
       }
       setLookup(locatedLookup);
       cacheLookup(locatedLookup);
@@ -710,7 +717,7 @@ export function FundamentalsWorkbench() {
       setNotice({
         tone: usedCachedLookup ? 'warn' : 'good',
         text: usedCachedLookup
-          ? `巨潮查询暂时超时，正在用刚才已确认的${locatedLookup.reports.length}份官方报告继续抽取。`
+          ? `正在用刚才已确认的${locatedLookup.reports.length}份官方报告继续抽取，无需重复查询巨潮。`
           : `已确认${locatedLookup.company.companyName}，正在从官方定期报告读取并核验数据。`,
       });
 
