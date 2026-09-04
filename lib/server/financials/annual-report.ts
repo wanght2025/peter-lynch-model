@@ -71,7 +71,13 @@ function findStartPage(
   for (let index = 0; index < pages.length; index += 1) {
     const page = pages[index];
     if (!heading.some((pattern) => pattern.test(page.text))) continue;
-    const score = signals.filter((pattern) => pattern.test(page.text)).length;
+    // Some CNInfo statements put the title on one page and the column
+    // headings/line items on the following one or two pages.
+    const nearbyText = pages
+      .slice(index, index + 3)
+      .map((item) => item.text)
+      .join('\n');
+    const score = signals.filter((pattern) => pattern.test(nearbyText)).length;
     if (score && (!best || score > best.score)) best = { index, score };
   }
   return best ? best.index : -1;
@@ -457,7 +463,11 @@ export async function extractFinancialReport(
 
   const incomeStart = findStartPage(
     pages,
-    [/合并利润表/, /綜合收益表/, /Consolidated Income Statement/i],
+    [
+      /合并(?:年初[到至]报告期末)?利润表/,
+      /綜合收益表/,
+      /Consolidated Income Statement/i,
+    ],
     [/营业总收入|Revenues|Value-added Services/i, /营业成本|Cost of revenues/i],
   );
   const balanceStart = findStartPage(
@@ -472,7 +482,7 @@ export async function extractFinancialReport(
   const cashFlowStart = findStartPage(
     pages,
     [
-      /合并现金流量表/,
+      /合并(?:年初[到至]报告期末)?现金流量表/,
       /綜合現金流量表/,
       /Consolidated Statement of Cash Flows/i,
     ],
@@ -497,6 +507,7 @@ export async function extractFinancialReport(
     /^其中[：:]?营业收入/,
     /^一、营业收入/,
     /^营业收入/,
+    /^营业总收入/,
     /^Revenue\b/i,
   ]);
   if (!revenue) {

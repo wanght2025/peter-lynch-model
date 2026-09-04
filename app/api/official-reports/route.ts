@@ -1,4 +1,7 @@
-import { normalizeSecurityCode } from '@/lib/official-filings';
+import {
+  normalizeSecurityCode,
+  SecurityNotFoundError,
+} from '@/lib/official-filings';
 import { lookupAShare } from '@/lib/server/official-filings/a-share';
 import { lookupHkShare } from '@/lib/server/official-filings/hk-share';
 
@@ -21,9 +24,8 @@ export async function GET(request: Request) {
       headers: { 'Cache-Control': 'private, max-age=300' },
     });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : '官方披露查询失败';
-    const missing = /未找到/.test(message);
+    const message = error instanceof Error ? error.message : '官方披露查询失败';
+    const missing = error instanceof SecurityNotFoundError;
     return Response.json(
       { error: message, retryable: !missing },
       { status: missing ? 404 : 502 },

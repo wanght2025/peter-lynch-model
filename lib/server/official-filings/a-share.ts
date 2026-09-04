@@ -3,6 +3,7 @@ import {
   filingCoverage,
   financialCompanyByName,
   reportingPolicyFor,
+  SecurityNotFoundError,
   type OfficialFiling,
   type OfficialLookup,
 } from '@/lib/official-filings';
@@ -10,7 +11,7 @@ import {
 const CNINFO_BASE = 'https://www.cninfo.com.cn';
 
 type CninfoSecurity = {
-  code?: string;
+  code?: string | number;
   zwjc?: string;
   secName?: string;
   orgId?: string;
@@ -47,6 +48,10 @@ function reportKind(title: string): OfficialFiling['reportKind'] | null {
   return null;
 }
 
+function languageOf(title: string): OfficialFiling['language'] {
+  return /(英文版|英文|ENGLISH)/i.test(title) ? 'en' : 'zh';
+}
+
 function selectReportPeriods(reports: OfficialFiling[]) {
   const best = new Map<string, OfficialFiling>();
   for (const report of reports) {
@@ -54,9 +59,22 @@ function selectReportPeriods(reports: OfficialFiling[]) {
       ? `${report.reportKind}:${report.fiscalYear}`
       : report.id;
     const previous = best.get(key);
-    const priority = (item: OfficialFiling) =>
-      (item.isCorrection ? 10 : 0) + Number(item.date.replaceAll('-', ''));
-    if (!previous || priority(report) > priority(previous)) best.set(key, report);
+    const preference = (item: OfficialFiling) => [
+      item.isCorrection ? 1 : 0,
+      item.language === 'zh' ? 2 : item.language === 'bilingual' ? 1 : 0,
+      Number(item.date.replaceAll('-', '')) || 0,
+    ];
+    const current = preference(report);
+    const prior = previous && preference(previous);
+    if (
+      !prior ||
+      current.some(
+        (value, index) =>
+          value > prior[index] &&
+          current.slice(0, index).every((v, i) => v === prior[i]),
+      )
+    )
+      best.set(key, report);
   }
   const limits: Record<OfficialFiling['reportKind'], number> = {
     annual: 10,
@@ -107,10 +125,16 @@ export async function lookupAShare(code: string): Promise<OfficialLookup> {
   const securityData = (await securityResponse.json()) as {
     keyBoardList?: CninfoSecurity[];
   };
-  const security = (securityData.keyBoardList ?? []).find(
-    (item) => item.code === code,
+  if (!Array.isArray(securityData.keyBoardList))
+    throw new Error('巨潮证券查询返回格式无法识别');
+  const security = securityData.keyBoardList.find(
+    (item) =>
+      String(item.code ?? '')
+        .trim()
+        .padStart(6, '0') === code,
   );
-  if (!security?.orgId) throw new Error('巨潮资讯未找到这个A股代码');
+  if (!security?.orgId)
+    throw new SecurityNotFoundError('巨潮资讯未找到这个A股代码');
 
   const end = new Date().toISOString().slice(0, 10);
   const startDate = new Date();
@@ -178,8 +202,7 @@ export async function lookupAShare(code: string): Promise<OfficialLookup> {
       const title = (item.announcementTitle ?? '').replace(/<[^>]+>/g, '');
       const kind = reportKind(title);
       const id = item.announcementId ?? item.adjunctUrl ?? '';
-      if (!kind || !id || /(摘要|英文版)/.test(title) || seen.has(id))
-        return null;
+      if (!kind || !id || /摘要/.test(title) || seen.has(id)) return null;
       seen.add(id);
       return {
         id,
@@ -195,7 +218,7 @@ export async function lookupAShare(code: string): Promise<OfficialLookup> {
         sourceName: '巨潮资讯网法定披露平台',
         reportKind: kind,
         fiscalYear: Number(title.match(/(20\d{2})/)?.[1]) || undefined,
-        language: 'zh',
+        language: languageOf(title),
         isCorrection: /(更正|修订|更新)/.test(title),
         isSummary: false,
       };

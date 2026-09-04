@@ -3,6 +3,7 @@ import {
   filingCoverage,
   financialCompanyByName,
   reportingPolicyFor,
+  SecurityNotFoundError,
   type OfficialFiling,
   type OfficialLookup,
 } from '@/lib/official-filings';
@@ -154,7 +155,9 @@ async function activeStocks(language: 'e' | 'c') {
   );
   if (!response.ok)
     throw new Error(`港交所证券列表查询失败：${response.status}`);
-  return collectStocks(await response.json());
+  const stocks = collectStocks(await response.json());
+  if (stocks.length === 0) throw new Error('港交所证券列表返回格式无法识别');
+  return stocks;
 }
 
 async function titleSearch(stockId: string, language: 'en' | 'zh') {
@@ -213,7 +216,7 @@ export async function lookupHkShare(code: string): Promise<OfficialLookup> {
     activeStocks('c').catch(() => []),
   ]);
   const stock = englishStocks.find((item) => item.code === code);
-  if (!stock) throw new Error('港交所披露易未找到这个港股代码');
+  if (!stock) throw new SecurityNotFoundError('港交所披露易未找到这个港股代码');
   const chinese = chineseStocks.find((item) => item.code === code);
   const rows = (
     await Promise.all([

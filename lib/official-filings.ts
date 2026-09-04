@@ -38,16 +38,27 @@ export type OfficialLookup = {
   warnings: string[];
 };
 
-export function normalizeSecurityCode(input: string): {
+/** Raised only when the upstream source confirms that a security does not exist. */
+export class SecurityNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SecurityNotFoundError';
+  }
+}
+
+export function normalizeSecurityCode(input: unknown): {
   market: SecurityMarket;
   code: string;
 } | null {
+  if (typeof input !== 'string' && typeof input !== 'number') return null;
   const cleaned = input
+    .toString()
     .trim()
     .toUpperCase()
     .replace(/^(SH|SZ|BJ|HK)[:.\s-]*/, '')
     .replace(/\D/g, '');
-  if (/^\d{5}$/.test(cleaned)) return { market: 'HK', code: cleaned };
+  if (/^\d{4,5}$/.test(cleaned))
+    return { market: 'HK', code: cleaned.padStart(5, '0') };
   if (/^\d{6}$/.test(cleaned)) return { market: 'A_SHARE', code: cleaned };
   return null;
 }

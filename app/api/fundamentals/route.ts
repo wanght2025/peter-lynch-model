@@ -1,5 +1,6 @@
 import {
   normalizeSecurityCode,
+  SecurityNotFoundError,
   type OfficialLookup,
 } from '@/lib/official-filings';
 import { buildAnnualDataset } from '@/lib/server/financials/dataset';
@@ -61,7 +62,7 @@ async function respond(normalized: NormalizedCode, lookup?: OfficialLookup) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : '财报自动抽取失败';
-    const missing = /未找到/.test(message);
+    const missing = error instanceof SecurityNotFoundError;
     return Response.json(
       { error: message, retryable: !missing },
       { status: missing ? 404 : 502 },
