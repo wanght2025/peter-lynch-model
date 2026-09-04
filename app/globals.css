@@ -36,7 +36,7 @@
 :root {
   color-scheme: light;
   --ds-app-chrome: #ffffff;
-  --ds-canvas: #f3f6fa;
+  --ds-canvas: #f8fafc;
   --ds-surface: #ffffff;
   --ds-surface-subtle: #f7f9fc;
   --ds-surface-selected: #eaf1ff;
@@ -131,6 +131,32 @@
 .finance-shell {
   background: var(--ds-canvas);
   font-size: 14px;
+}
+
+.finance-shell summary {
+  min-height: 44px;
+  align-content: center;
+}
+
+.finance-shell a,
+.finance-shell button,
+.finance-shell summary {
+  transition-duration: 160ms;
+}
+
+.skip-link {
+  position: fixed;
+  left: 16px;
+  top: 8px;
+  z-index: 100;
+  transform: translateY(-160%);
+  background: var(--ds-text-primary);
+  color: white;
+  padding: 8px 12px;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
 }
 
 .finance-shell [data-slot='card'] {

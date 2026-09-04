@@ -1,5 +1,5 @@
-import { FundamentalsWorkbench } from '@/components/fundamentals-workbench';
+import { ResearchHome } from '@/components/research-home';
 
 export default function Home() {
-  return <FundamentalsWorkbench />;
+  return <ResearchHome />;
 }

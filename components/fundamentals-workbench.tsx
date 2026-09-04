@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  AlertTriangle,
   Database,
   ExternalLink,
   FileSearch,
@@ -11,7 +10,6 @@ import {
   ChartNoAxesCombined,
   LoaderCircle,
   Printer,
-  Search,
   ShieldCheck,
   Sparkles,
   Table2,
@@ -594,7 +592,12 @@ function valuationSeries(dataset: AnalysisDataset) {
   ];
 }
 
-export function FundamentalsWorkbench() {
+export function FundamentalsWorkbench({
+  initialCode,
+}: {
+  initialCode?: string;
+}) {
+  const initialQueryHandled = useRef(false);
   const [stockCode, setStockCode] = useState('');
   const [lookup, setLookup] = useState<OfficialLookup | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -617,6 +620,7 @@ export function FundamentalsWorkbench() {
   const [notice, setNotice] = useState<Notice>(null);
 
   useEffect(() => {
+    if (initialCode) return;
     const saved = window.localStorage.getItem(DATASET_STORAGE_KEY);
     if (saved) {
       try {
@@ -637,7 +641,7 @@ export function FundamentalsWorkbench() {
         window.localStorage.removeItem(ANALYSIS_STORAGE_KEY);
       }
     }
-  }, []);
+  }, [initialCode]);
 
   const chartData = useMemo(() => {
     if (!dataset) return new Map<string, MetricPoint[]>();
@@ -794,6 +798,16 @@ export function FundamentalsWorkbench() {
     }
   }
 
+  const runInitialLookup = useEffectEvent((code: string) => {
+    void lookupStock(code);
+  });
+
+  useEffect(() => {
+    if (!initialCode || initialQueryHandled.current) return;
+    initialQueryHandled.current = true;
+    runInitialLookup(initialCode);
+  }, [initialCode]);
+
   const activeName = dataset?.companyName ?? lookup?.company.companyName;
   const activeCode = dataset?.companyCode ?? lookup?.company.code ?? stockCode;
   const activeMarket =
@@ -881,9 +895,15 @@ export function FundamentalsWorkbench() {
   }
 
   return (
-    <main className="finance-shell min-h-screen overflow-x-hidden bg-[var(--ds-canvas)] text-[var(--ds-text-primary)]">
+    <main
+      id="main-content"
+      className="finance-shell min-h-dvh overflow-x-hidden bg-[var(--ds-canvas)] text-[var(--ds-text-primary)]"
+    >
+      <a href="#overview" className="skip-link">
+        跳到公司概览
+      </a>
       <header className="sticky top-0 z-40 border-b border-[var(--ds-border-subtle)] bg-[var(--ds-app-chrome)] text-[var(--ds-text-primary)]">
-        <div className="mx-auto flex h-12 max-w-[1600px] items-center justify-between gap-4 px-4 lg:px-6">
+        <div className="mx-auto flex h-14 max-w-[1280px] items-center justify-between gap-4 px-4 lg:px-6">
           <div className="flex items-center gap-3">
             <span className="grid size-7 place-items-center rounded-[5px] bg-[var(--ds-primary)] font-mono text-[10px] font-bold tracking-tight text-white">
               LY
@@ -898,35 +918,48 @@ export function FundamentalsWorkbench() {
             </div>
           </div>
           <nav className="print-hidden hidden h-full items-center text-[11px] font-semibold tracking-wide md:flex">
-            <a
+            <Link
               className="flex h-full items-center border-b-2 border-[var(--ds-accent)] px-3"
+              href="/"
+              prefetch={false}
+            >
+              公司搜索
+            </Link>
+            <a
+              className="flex h-full items-center border-b-2 border-transparent px-3 text-[var(--ds-text-secondary)] hover:text-[var(--ds-text-primary)]"
               href="#overview"
             >
               概览
             </a>
-            <Link
-              className="flex h-full items-center border-b-2 border-transparent px-3 text-[var(--ds-text-secondary)] hover:text-[var(--ds-text-primary)]"
-              href="/rules"
-            >
-              规则参考
-            </Link>
             <a
               className="flex h-full items-center border-b-2 border-transparent px-3 text-[var(--ds-text-secondary)] hover:text-[var(--ds-text-primary)]"
-              href="#financials"
+              href="#chart-growth"
             >
-              财务
+              增长
+            </a>
+            <a
+              className="flex h-full items-center border-b-2 border-transparent px-3 text-[var(--ds-text-secondary)] hover:text-[var(--ds-text-primary)]"
+              href="#chart-valuation"
+            >
+              估值
+            </a>
+            <a
+              className="flex h-full items-center border-b-2 border-transparent px-3 text-[var(--ds-text-secondary)] hover:text-[var(--ds-text-primary)]"
+              href="#chart-growth-rates"
+            >
+              盈利能力
             </a>
             <a
               className="flex h-full items-center border-b-2 border-transparent px-3 text-[var(--ds-text-secondary)] hover:text-[var(--ds-text-primary)]"
               href="#debt"
             >
-              负债
+              资产负债
             </a>
             <a
               className="flex h-full items-center border-b-2 border-transparent px-3 text-[var(--ds-text-secondary)] hover:text-[var(--ds-text-primary)]"
-              href="#sources"
+              href="#chart-fcf"
             >
-              来源
+              现金流
             </a>
             <Button
               type="button"
@@ -942,36 +975,15 @@ export function FundamentalsWorkbench() {
         </div>
       </header>
 
-      <div className="research-tape" aria-label="研究工作流状态">
-        <div className="mx-auto flex min-w-max max-w-[1600px] items-center px-4 lg:px-6">
-          <TapeItem label="评分标准" value="100 分制" />
-          <TapeItem label="主要数据" value="官方定期报告" tone="evidence" />
-          <TapeItem label="判断方式" value="程序计算 + 人工确认" />
-          <TapeItem
-            label="状态"
-            value={
-              fullyComplete
-                ? '可以分析'
-                : dataset
-                  ? '部分数据'
-                  : lookup
-                    ? '报告已确认'
-                    : '等待输入代码'
-            }
-            tone={fullyComplete ? 'good' : 'muted'}
-          />
-        </div>
-      </div>
-
       <section
         id="overview"
         className="border-b border-[var(--ds-border-subtle)] bg-[var(--ds-surface)]"
       >
-        <div className="mx-auto flex min-h-14 max-w-[1600px] flex-col justify-between gap-3 px-4 py-2.5 sm:flex-row sm:items-center lg:px-6">
+        <div className="mx-auto flex min-h-24 max-w-[1280px] flex-col justify-between gap-4 px-4 py-5 sm:flex-row sm:items-end lg:px-6">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="truncate text-base font-semibold tracking-[0.01em]">
-                {activeName ?? '研究一家公司，从股票代码开始'}
+              <h1 className="truncate text-3xl font-semibold tracking-[-0.025em]">
+                {activeName ?? '公司研究'}
               </h1>
               {activeName && (
                 <Badge
@@ -987,24 +999,31 @@ export function FundamentalsWorkbench() {
                 </Badge>
               )}
             </div>
-            <p className="mt-1 text-[11px] text-[var(--ds-text-tertiary)]">
-              官方定期报告 · 十年年度数据 · 最新法定报告形成滚动值 ·
-              关键数字可追溯
+            <p className="mt-2 text-sm text-[var(--ds-text-tertiary)]">
+              {dataset
+                ? `${dataset.security?.exchange ?? (activeMarket === 'HK' ? '港交所' : 'A股')} · 最新报告期 ${dataset.latestReportPeriod ?? '未取得'} · 数据更新 ${dataset.generatedAt.slice(0, 10)} · 已统计 ${collectedDataCount} 个有效数据`
+                : lookup
+                  ? `${lookup.company.exchange} · 已确认 ${lookup.reports.length} 份官方报告，正在形成研究结果`
+                  : '输入股票代码，开始一家公司研究'}
             </p>
           </div>
-          {dataset && (
-            <CompanyTypePicker
-              selected={confirmedCompanyTypes}
-              suggestions={aiReport?.companyTypes ?? []}
-              onChange={setConfirmedCompanyTypes}
-            />
+          {dataset?.currentMarket && (
+            <div className="text-right">
+              <p className="font-mono text-2xl font-semibold">
+                {dataset.currentMarket.price.toFixed(2)}{' '}
+                {dataset.currentMarket.currency}
+              </p>
+              <p className="mt-1 text-xs text-[var(--ds-text-tertiary)]">
+                行情日期 {dataset.currentMarket.date}
+              </p>
+            </div>
           )}
         </div>
       </section>
 
       <TooltipProvider>
-        <div className="mx-auto max-w-[1600px] space-y-4 px-4 py-4 lg:px-6">
-          {notice && (
+        <div className="mx-auto flex max-w-[1280px] flex-col gap-8 px-4 py-6 lg:px-6">
+          {notice && (!dataset || notice.tone !== 'good') && (
             <output
               role={notice.tone === 'bad' ? 'alert' : 'status'}
               aria-live={notice.tone === 'bad' ? 'assertive' : 'polite'}
@@ -1020,30 +1039,24 @@ export function FundamentalsWorkbench() {
             </output>
           )}
 
-          <section
-            className={`grid gap-3 ${dataset ? '' : 'xl:grid-cols-[minmax(0,1.65fr)_minmax(280px,0.7fr)]'}`}
-          >
+          <section className={dataset ? 'order-[19]' : 'order-1'}>
             <div
-              className="terminal-panel"
+              className="border-b border-[var(--ds-border-subtle)] bg-[var(--ds-surface)]"
               data-channel="program"
               data-ready={dataset ? 'true' : undefined}
               aria-labelledby="instrument-lookup-title"
             >
-              <div className="flex h-full flex-col p-4 sm:p-5">
-                <div className="lookup-form-grid grid gap-4 lg:grid-cols-[minmax(220px,0.7fr)_minmax(320px,1.3fr)] lg:items-end">
+              <div className="py-4">
+                <div className="lookup-form-grid grid gap-4 lg:grid-cols-[minmax(220px,0.55fr)_minmax(320px,1.45fr)] lg:items-end">
                   <div className="lookup-intro">
-                    <p className="terminal-label flex items-center gap-2 text-[var(--ds-accent)]">
-                      <Search className="size-3.5" /> 公司研究
-                    </p>
                     <h2
                       id="instrument-lookup-title"
-                      className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl"
+                      className="text-base font-semibold tracking-tight"
                     >
-                      研究一家公司，从股票代码开始
+                      {dataset ? '研究其他公司' : '输入股票代码开始研究'}
                     </h2>
-                    <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--ds-text-tertiary)]">
-                      输入 6 位 A 股或 5
-                      位港股代码。我们会先核对公司身份和报告范围，再整理估值、增长、负债与现金流。无需了解彼得·林奇的术语。
+                    <p className="mt-1 text-xs leading-5 text-[var(--ds-text-tertiary)]">
+                      支持 6 位 A 股及 4–5 位港股代码
                     </p>
                   </div>
                   <div className="space-y-2">
@@ -1247,112 +1260,22 @@ export function FundamentalsWorkbench() {
                     </details>
                   </div>
                 )}
-                {!lookup && !dataset && (
-                  <div className="mt-auto grid grid-cols-2 border-t border-[var(--ds-border-subtle)] pt-5 sm:grid-cols-4">
-                    {[
-                      ['01', '确认公司', '市场与证券代码'],
-                      ['02', '读取报告', '财务原表'],
-                      ['03', '核对口径', '报告期与来源'],
-                      ['04', '形成结果', '指标与依据'],
-                    ].map(([code, title, note]) => (
-                      <div
-                        key={code}
-                        className="border-l border-[var(--ds-border-subtle)] px-3 first:border-l-0 first:pl-0"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-[9px] text-[var(--ds-accent)]">
-                            {code}
-                          </span>
-                          <span className="text-[11px] font-semibold text-[var(--ds-text-secondary)]">
-                            {title}
-                          </span>
-                        </div>
-                        <p className="mt-1 font-mono text-[9px] text-[var(--ds-text-disabled)]">
-                          {note}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
-
-            {!dataset && (
-              <aside className="terminal-panel" data-channel="evidence">
-                <div className="p-4 sm:p-5">
-                  <p className="terminal-label flex items-center gap-2 text-[var(--ds-success)]">
-                    <CircleHelp className="size-3.5" /> 结果说明
-                  </p>
-                  <h2 className="mt-2 text-base font-semibold">
-                    研究结果怎么看
-                  </h2>
-                  <p className="mt-2 text-sm leading-6 text-[var(--ds-text-tertiary)]">
-                    彼得·林奇方法关注增长、估值、负债和现金流。这里先展示结论，再提供报告、页码和计算过程。
-                  </p>
-                  <div className="mt-4 divide-y divide-[var(--ds-border-subtle)] border-y border-[var(--ds-border-subtle)]">
-                    <ResearchGateRow
-                      code="01"
-                      title="公司与报告"
-                      note="确认研究对象和数据范围"
-                    />
-                    <ResearchGateRow
-                      code="02"
-                      title="先看四项"
-                      note="估值、增长、负债、现金流"
-                    />
-                    <ResearchGateRow
-                      code="03"
-                      title="查看依据"
-                      note="回到公式、页码与原始报告"
-                    />
-                  </div>
-                  <div className="mt-4 flex items-center justify-between gap-3 text-xs">
-                    <span className="text-[var(--ds-text-tertiary)]">
-                      公司类型
-                    </span>
-                    <span className="text-right font-semibold text-[var(--ds-success)]">
-                      {confirmedCompanyTypes.length > 0
-                        ? confirmedCompanyTypes
-                            .map(companyTypeLabel)
-                            .join(' + ')
-                        : '数据出来后再选择'}
-                    </span>
-                  </div>
-                </div>
-              </aside>
-            )}
           </section>
 
-          <section className="ds-kpi-strip grid grid-cols-1">
-            <StatusCard
-              label="已统计有效数据"
-              value={`${collectedDataCount} 个`}
-              note={
-                dataset
-                  ? '财务与行情数字均经过报告期、格式和来源检查；详细分类仅在追溯区查看。'
-                  : lookup
-                    ? '正在读取并核验数据，完成后显示总数。'
-                    : '输入股票代码后显示可用数据总数。'
-              }
-            />
-          </section>
-
-          <details className="rounded-lg border border-[var(--ds-border-subtle)] bg-[var(--ds-surface)] px-4 py-3">
+          <details className="order-[20] border-y border-[var(--ds-border-subtle)] py-3">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium">
-              <span>数据处理状态与口径</span>
-              <Badge
+              <span>数据覆盖与处理说明</span>
+              <span
                 className={
                   fullyComplete
-                    ? 'rounded-sm bg-[var(--ds-success-bg)] text-[var(--ds-success)] hover:bg-[var(--ds-success-bg)]'
-                    : 'rounded-sm bg-[var(--ds-warning-bg)] text-[var(--ds-warning)] hover:bg-[var(--ds-warning-bg)]'
+                    ? 'text-[var(--ds-success)]'
+                    : 'text-[var(--ds-warning)]'
                 }
               >
-                {fullyComplete
-                  ? '数据已就绪'
-                  : dataset
-                    ? '数据不完整'
-                    : '尚未就绪'}
-              </Badge>
+                {fullyComplete ? '完整' : dataset ? '部分数据' : '尚未就绪'}
+              </span>
             </summary>
             <p className="mt-3 border-t border-[var(--ds-border-subtle)] pt-3 text-xs leading-5 text-[var(--ds-text-tertiary)]">
               {dataset
@@ -1366,7 +1289,7 @@ export function FundamentalsWorkbench() {
           </details>
 
           {dataset && (
-            <section className="space-y-3">
+            <section className="order-3 space-y-3">
               <div>
                 <p className="ds-eyebrow">公司概览</p>
                 <h2 className="mt-1 text-[17px] font-semibold tracking-tight">
@@ -1379,7 +1302,7 @@ export function FundamentalsWorkbench() {
                   ，滚动值与完整年度值分开标注。
                 </p>
               </div>
-              <div className="ds-kpi-strip grid sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+              <div className="ds-kpi-strip grid border-y border-[var(--ds-border-subtle)] sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
                 <MetricTile
                   label="最新价格"
                   value={
@@ -1448,125 +1371,150 @@ export function FundamentalsWorkbench() {
           )}
 
           {analysis && (
-            <section className="grid gap-4 xl:grid-cols-[0.72fr_1.28fr]">
-              <Card className="finance-score-card border-l-4 border-l-[var(--ds-accent)]">
-                <CardHeader className="ds-panel-heading">
-                  <CardTitle className="text-sm font-semibold">
-                    综合评分
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-4">
-                  <div className="flex flex-wrap items-end justify-between gap-3">
-                    <div className="flex items-end gap-3">
-                      <span className="text-4xl font-semibold tracking-tight text-[var(--ds-text-primary)]">
-                        {!activeFinancial && combinedScore?.score != null
-                          ? Math.round(combinedScore.score)
-                          : '—'}
-                      </span>
-                      <span className="pb-1 text-xs text-[var(--ds-text-tertiary)]">
-                        / 100
-                      </span>
-                    </div>
-                    <Badge className="rounded-sm bg-[var(--ds-info-bg)] text-[var(--ds-accent)] hover:bg-[var(--ds-info-bg)]">
-                      {activeFinancial ? '不评级' : currentScoreInsight.grade}
-                    </Badge>
-                  </div>
-                  <p className="mt-3 text-sm font-medium leading-6 text-[var(--ds-text-primary)]">
+            <section className="order-2 border-t border-[var(--ds-border-strong)] pt-6">
+              <p className="ds-eyebrow">投资结论</p>
+              <div className="mt-2 grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end">
+                <div>
+                  <h2 className="text-2xl font-semibold tracking-[-0.025em] sm:text-[28px]">
+                    {confirmedCompanyTypes.length > 0
+                      ? `${confirmedCompanyTypes.map(companyTypeLabel).join(' · ')} · ${activeFinancial ? '仅展示证据' : currentScoreInsight.grade}`
+                      : activeFinancial
+                        ? '公司类型待确认 · 仅展示证据'
+                        : `公司类型待确认 · ${currentScoreInsight.grade}`}
+                  </h2>
+                  <p className="mt-3 max-w-3xl text-base leading-7 text-[var(--ds-text-secondary)]">
                     {activeFinancial
-                      ? '金融企业不套用普通公司排名，只展示单条证据。'
+                      ? '金融企业不套用普通公司排名，保留当前项目已有的财务事实与单条规则证据。'
                       : currentScoreInsight.verdict}
                   </p>
-                  {combinedScore?.score != null && (
-                    <div className="mt-4">
-                      <div className="relative h-2 overflow-hidden rounded-full bg-[var(--ds-border-subtle)]">
-                        <div
-                          className="h-full rounded-full bg-[var(--ds-accent)]"
-                          style={{
-                            width: `${Math.max(0, Math.min(100, combinedScore.score))}%`,
-                          }}
-                        />
-                      </div>
-                      <div className="mt-1 flex justify-between text-[10px] text-[var(--ds-text-tertiary)]">
-                        <span>0 高风险</span>
-                        <span>50 一般</span>
-                        <span>65 良好</span>
-                        <span>80 优秀</span>
-                        <span>100</span>
-                      </div>
+                </div>
+                <div className="flex items-baseline gap-2 text-right">
+                  <span className="text-xs text-[var(--ds-text-tertiary)]">
+                    辅助评分
+                  </span>
+                  <span className="font-mono text-3xl font-semibold">
+                    {!activeFinancial && combinedScore?.score != null
+                      ? Math.round(combinedScore.score)
+                      : '—'}
+                  </span>
+                  <span className="text-xs text-[var(--ds-text-tertiary)]">
+                    / 100
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-7 grid border-y border-[var(--ds-border-subtle)] md:grid-cols-2 xl:grid-cols-4">
+                <ResearchJudgment
+                  label="估值"
+                  verdict={
+                    analysis.snapshot.peContext === 'low'
+                      ? '偏低'
+                      : analysis.snapshot.peContext === 'extreme'
+                        ? '偏高'
+                        : analysis.snapshot.peContext === 'normal'
+                          ? '合理'
+                          : '待判断'
+                  }
+                  metrics={`PE ${typeof analysis.snapshot.peTtm === 'number' ? `${analysis.snapshot.peTtm.toFixed(2)}倍` : '缺失'} · 5年EPS增长 ${typeof analysis.snapshot.earningsCagr5yPercent === 'number' ? `${analysis.snapshot.earningsCagr5yPercent.toFixed(2)}%` : '缺失'}`}
+                />
+                <ResearchJudgment
+                  label="增长"
+                  verdict={
+                    typeof analysis.snapshot.earningsCagr5yPercent === 'number'
+                      ? analysis.snapshot.earningsCagr5yPercent > 0
+                        ? '保持增长'
+                        : '增长承压'
+                      : '证据不足'
+                  }
+                  metrics={`营收同比 ${typeof analysis.snapshot.revenueGrowthYoYPercent === 'number' ? `${analysis.snapshot.revenueGrowthYoYPercent.toFixed(2)}%` : '缺失'} · EPS CAGR ${typeof analysis.snapshot.earningsCagr5yPercent === 'number' ? `${analysis.snapshot.earningsCagr5yPercent.toFixed(2)}%` : '缺失'}`}
+                />
+                <ResearchJudgment
+                  label="财务安全"
+                  verdict={
+                    typeof analysis.snapshot.debtRatioPercent === 'number'
+                      ? analysis.snapshot.debtRatioPercent < 50
+                        ? '负债结构较稳健'
+                        : '关注负债水平'
+                      : '证据不足'
+                  }
+                  metrics={`资产负债率 ${typeof analysis.snapshot.debtRatioPercent === 'number' ? `${analysis.snapshot.debtRatioPercent.toFixed(2)}%` : '缺失'} · 每股净现金 ${typeof analysis.snapshot.lynchNetCashPerShare === 'number' ? analysis.snapshot.lynchNetCashPerShare.toFixed(3) : '缺失'}`}
+                />
+                <ResearchJudgment
+                  label="现金流"
+                  verdict={
+                    analysis.snapshot.freeCashFlowTrend === 'improving'
+                      ? '改善'
+                      : analysis.snapshot.freeCashFlowTrend === 'stable'
+                        ? '稳定'
+                        : analysis.snapshot.freeCashFlowTrend === 'worsening'
+                          ? '走弱'
+                          : '证据不足'
+                  }
+                  metrics={`自由现金流 ${typeof analysis.snapshot.freeCashFlow === 'number' ? `${(analysis.snapshot.freeCashFlow / 100_000_000).toLocaleString('zh-CN', { maximumFractionDigits: 2 })}亿${dataset?.currency ?? ''}` : '缺失'}`}
+                />
+              </div>
+
+              <div className="mt-6 grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
+                <div>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold">
+                        Peter Lynch 公司类型
+                      </p>
+                      <p className="mt-1 text-sm text-[var(--ds-text-tertiary)]">
+                        先确认公司属于哪一种经营特征，再查看适用规则。
+                      </p>
                     </div>
-                  )}
-                  <p className="mt-3 rounded-md bg-[var(--ds-surface-subtle)] px-3 py-2 text-xs leading-5 text-[var(--ds-text-secondary)]">
-                    证据覆盖率{' '}
+                    <CompanyTypePicker
+                      selected={confirmedCompanyTypes}
+                      suggestions={aiReport?.companyTypes ?? []}
+                      onChange={setConfirmedCompanyTypes}
+                    />
+                  </div>
+                  <div className="mt-5 grid grid-cols-4 divide-x divide-[var(--ds-border-subtle)] border-y border-[var(--ds-border-subtle)] py-3 text-center text-xs">
+                    <ScoreCount
+                      label="正向"
+                      value={combinedScore?.positiveCount ?? 0}
+                    />
+                    <ScoreCount
+                      label="中性"
+                      value={combinedScore?.neutralCount ?? 0}
+                    />
+                    <ScoreCount
+                      label="风险"
+                      value={combinedScore?.riskCount ?? 0}
+                    />
+                    <ScoreCount
+                      label="证据不足"
+                      value={combinedScore?.insufficientCount ?? 0}
+                    />
+                  </div>
+                </div>
+                <div className="border-l-0 border-[var(--ds-border-subtle)] lg:border-l lg:pl-6">
+                  <p className="text-sm font-semibold">评分怎么看</p>
+                  <p className="mt-2 text-sm leading-6 text-[var(--ds-text-secondary)]">
+                    80分以上进入优选研究区，65—79分值得继续研究，50—64分表现一般，50分以下风险证据占优。
+                  </p>
+                  <p className="mt-3 text-xs leading-5 text-[var(--ds-text-tertiary)]">
+                    当前证据覆盖率{' '}
                     {((combinedScore?.coverage ?? 0) * 100).toFixed(0)}% ·{' '}
                     {currentScoreInsight.comparability}
-                    {confirmedCompanyTypes.length === 0
-                      ? ' · 尚未确认公司类型，类型专属规则暂未启用'
-                      : ''}
+                    。评分只作横向初筛，不是林奇原著评分。
                   </p>
-                  <div className="mt-4 grid grid-cols-4 divide-x divide-[var(--ds-border-subtle)] border-t border-[var(--ds-border-subtle)] pt-3 text-center text-xs">
-                    <ScoreCount
-                      label="正向"
-                      value={combinedScore?.positiveCount ?? 0}
-                    />
-                    <ScoreCount
-                      label="中性"
-                      value={combinedScore?.neutralCount ?? 0}
-                    />
-                    <ScoreCount
-                      label="风险"
-                      value={combinedScore?.riskCount ?? 0}
-                    />
-                    <ScoreCount
-                      label="证据不足"
-                      value={combinedScore?.insufficientCount ?? 0}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="ds-panel-heading">
-                  <CardTitle className="text-sm font-semibold">
-                    怎么和其他股票比较
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm leading-6 text-muted-foreground">
-                    所有股票使用同一套100分尺度：80分以上进入优选研究区，65—79分值得继续研究，50—64分表现一般，50分以下风险证据占优。
-                  </p>
-                  <p className="mt-2 text-xs leading-5 text-[var(--ds-text-tertiary)]">
-                    这是本模型的100分研究尺度，不是林奇原著评分；同一规则库与同一公式可用于横向初筛，但公司类型与证据充足度会改变有效规则数，不冒充实时全市场百分位排名。
-                  </p>
-                  <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <CoverageCount
-                      label="正向"
-                      value={combinedScore?.positiveCount ?? 0}
-                    />
-                    <CoverageCount
-                      label="中性"
-                      value={combinedScore?.neutralCount ?? 0}
-                    />
-                    <CoverageCount
-                      label="风险"
-                      value={combinedScore?.riskCount ?? 0}
-                    />
-                    <CoverageCount
-                      label="证据不足"
-                      value={combinedScore?.insufficientCount ?? 0}
-                    />
-                  </div>
-                  <p className="mt-4 rounded-md bg-[var(--ds-warning-bg)] px-3 py-2 text-xs leading-5 text-[var(--ds-warning)]">
-                    横向比较必须同时看证据覆盖率。覆盖率低于60%的分数只作初筛；当前缺失的回购、内部人士等事件可在“补充研判”中检索最近一年证据，再由你确认。
-                  </p>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             </section>
           )}
 
-          {dataset && <DebtStructurePanel dataset={dataset} />}
+          {dataset && (
+            <div className="order-5">
+              <DebtStructurePanel dataset={dataset} />
+            </div>
+          )}
 
           {dataset ? (
             <>
-              <section id="financials" className="scroll-mt-32">
+              <section id="financials" className="order-4 scroll-mt-32">
                 <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
                   <div>
                     <p className="ds-eyebrow">财务质量</p>
@@ -1597,8 +1545,17 @@ export function FundamentalsWorkbench() {
                 </div>
               </section>
 
-              <section id="sources" className="scroll-mt-32">
-                <Card className="border border-[var(--ds-border-subtle)] bg-[var(--ds-surface)] ring-0">
+              <details
+                id="sources"
+                className="order-[21] scroll-mt-32 border-y border-[var(--ds-border-subtle)] py-4"
+              >
+                <summary className="cursor-pointer list-none text-base font-semibold">
+                  查看财报原文与数据来源
+                  <span className="ml-3 text-xs font-normal text-[var(--ds-text-tertiary)]">
+                    按报告期追溯页码、口径和原始链接
+                  </span>
+                </summary>
+                <Card className="mt-4 border border-[var(--ds-border-subtle)] bg-[var(--ds-surface)] ring-0">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-base font-semibold">
                       <Database className="size-5 text-[var(--ds-accent)]" />{' '}
@@ -1727,10 +1684,16 @@ export function FundamentalsWorkbench() {
                     )}
                   </CardContent>
                 </Card>
-              </section>
+              </details>
 
-              <section>
-                <Card className="border border-[var(--ds-border-subtle)] bg-[var(--ds-surface)] ring-0">
+              <details className="order-[22] border-y border-[var(--ds-border-subtle)] py-4">
+                <summary className="cursor-pointer list-none text-base font-semibold">
+                  补充近一年证据
+                  <span className="ml-3 text-xs font-normal text-[var(--ds-text-tertiary)]">
+                    可选，不改变程序计算结果
+                  </span>
+                </summary>
+                <Card className="mt-4 border border-[var(--ds-border-subtle)] bg-[var(--ds-surface)] ring-0">
                   <CardHeader className="flex flex-row items-start justify-between gap-4">
                     <div>
                       <CardTitle className="flex items-center gap-2 text-base font-semibold">
@@ -1869,43 +1832,35 @@ export function FundamentalsWorkbench() {
                     )}
                   </CardContent>
                 </Card>
-              </section>
-
-              <section className="rounded-sm border border-[var(--ds-warning)]/40 bg-[var(--ds-warning-bg)] p-4">
-                <div className="flex gap-3">
-                  <AlertTriangle className="mt-0.5 size-5 shrink-0 text-[var(--ds-warning)]" />
-                  <div>
-                    <p className="font-medium text-[var(--ds-warning)]">
-                      图表不是评分本身
-                    </p>
-                    <p className="mt-1 text-sm leading-6 text-[var(--ds-text-secondary)]">
-                      图表帮助理解趋势；总分只使用可验证规则。定性判断需要你确认，未确认前不进入综合评分。
-                    </p>
-                  </div>
-                </div>
-              </section>
+              </details>
 
               {analysis && (
-                <section id="rules" className="scroll-mt-32 space-y-3">
-                  <div>
-                    <p className="ds-eyebrow">报告末尾 · 评分依据</p>
-                    <h2 className="mt-1 text-[17px] font-semibold tracking-tight">
-                      单条规则与证据
-                    </h2>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      这里是参考与复核区，不打断前面的结论、数据和图表阅读。
-                    </p>
+                <details
+                  id="rules"
+                  className="order-[23] scroll-mt-32 border-y border-[var(--ds-border-subtle)] py-4"
+                >
+                  <summary className="cursor-pointer list-none text-base font-semibold">
+                    查看 Peter Lynch 规则与计算过程
+                    <span className="ml-3 text-xs font-normal text-[var(--ds-text-tertiary)]">
+                      公式、原文和单条证据
+                    </span>
+                  </summary>
+                  <div className="mt-5">
+                    <RuleAnalysisPanel
+                      dataset={dataset}
+                      analysis={analysis}
+                      results={effectiveProgramResults}
+                    />
                   </div>
-                  <RuleAnalysisPanel
-                    dataset={dataset}
-                    analysis={analysis}
-                    results={effectiveProgramResults}
-                  />
-                </section>
+                </details>
               )}
             </>
           ) : (
-            <ResearchModuleMap state={lookup ? 'located' : 'waiting'} />
+            <p className="order-2 py-16 text-center text-sm text-[var(--ds-text-tertiary)]">
+              {lookupLoading
+                ? '正在读取公司与财报，请稍候…'
+                : '输入股票代码后，这里会显示公司研究结果。'}
+            </p>
           )}
         </div>
       </TooltipProvider>
@@ -1914,110 +1869,6 @@ export function FundamentalsWorkbench() {
         本地使用 · 数据点必须可追溯 · 不构成投资建议
       </footer>
     </main>
-  );
-}
-
-function TapeItem({
-  label,
-  value,
-  tone = 'muted',
-}: {
-  label: string;
-  value: string;
-  tone?: 'muted' | 'evidence' | 'good';
-}) {
-  const valueClass =
-    tone === 'evidence'
-      ? 'text-[var(--ds-evidence)]'
-      : tone === 'good'
-        ? 'text-[var(--ds-success)]'
-        : 'text-[var(--ds-text-secondary)]';
-
-  return (
-    <div className="flex h-8 items-center gap-2 border-r border-[var(--ds-border-subtle)] px-3 first:pl-0 sm:px-4">
-      <span className="font-mono text-[9px] tracking-[0.14em] text-[var(--ds-text-disabled)]">
-        {label}
-      </span>
-      <span className={`font-mono text-[10px] font-semibold ${valueClass}`}>
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function ResearchGateRow({
-  code,
-  title,
-  note,
-}: {
-  code: string;
-  title: string;
-  note: string;
-}) {
-  return (
-    <div className="grid grid-cols-[24px_88px_1fr] items-center gap-2 py-2.5 text-xs">
-      <span className="font-mono text-[10px] text-[var(--ds-evidence)]">
-        {code}
-      </span>
-      <span className="font-semibold text-[var(--ds-text-primary)]">
-        {title}
-      </span>
-      <span className="text-right text-[11px] text-[var(--ds-text-tertiary)]">
-        {note}
-      </span>
-    </div>
-  );
-}
-
-function ResearchModuleMap({ state }: { state: 'waiting' | 'located' }) {
-  const modules = [
-    ['01', '估值与价格', 'PE / PB / Lynch PEG'],
-    ['02', '盈利能力', '收入 / EPS / 利润率'],
-    ['03', '资产负债', '净现金 / 债务结构'],
-    ['04', '现金与资本', '现金流 / 股息 / 回购'],
-    ['05', '规则证据', '原文 / 公式 / 本次代入'],
-    ['06', '来源追溯', '报告 / 页码 / 数据点'],
-  ] as const;
-
-  return (
-    <section className="terminal-panel" aria-labelledby="module-map-title">
-      <div className="flex flex-col justify-between gap-3 border-b border-[var(--ds-border-subtle)] px-4 py-3 sm:flex-row sm:items-end">
-        <div>
-          <p className="terminal-label">研究内容</p>
-          <h2 id="module-map-title" className="mt-1 text-base font-semibold">
-            {state === 'located'
-              ? '报告已定位，等待数据校验'
-              : '查询后将形成六个研究模块'}
-          </h2>
-        </div>
-        <p className="max-w-xl text-xs leading-5 text-[var(--ds-text-tertiary)] sm:text-right">
-          没有可靠数据的项目会明确标为“缺失”，不会用示例线或默认分数冒充结果。
-        </p>
-      </div>
-      <div className="module-map grid sm:grid-cols-2 xl:grid-cols-3">
-        {modules.map(([code, title, note]) => (
-          <div
-            key={code}
-            className="grid min-h-16 grid-cols-[28px_1fr_auto] items-center gap-3 border-b border-r border-[var(--ds-border-subtle)] px-4 py-3"
-          >
-            <span className="font-mono text-[10px] text-[var(--ds-text-disabled)]">
-              {code}
-            </span>
-            <div>
-              <p className="text-xs font-semibold text-[var(--ds-text-secondary)]">
-                {title}
-              </p>
-              <p className="mt-1 font-mono text-[9px] text-[var(--ds-text-disabled)]">
-                {note}
-              </p>
-            </div>
-            <span className="text-[10px] text-[var(--ds-text-disabled)]">
-              待数据
-            </span>
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -2339,6 +2190,28 @@ function MetricTile({
   );
 }
 
+function ResearchJudgment({
+  label,
+  verdict,
+  metrics,
+}: {
+  label: string;
+  verdict: string;
+  metrics: string;
+}) {
+  return (
+    <div className="min-w-0 border-b border-[var(--ds-border-subtle)] px-0 py-5 last:border-b-0 md:px-5 md:[&:nth-child(odd)]:border-r xl:border-b-0 xl:border-r xl:first:pl-0 xl:last:border-r-0 xl:last:pr-0">
+      <p className="text-xs font-medium text-[var(--ds-text-tertiary)]">
+        {label}
+      </p>
+      <p className="mt-2 text-lg font-semibold tracking-tight">{verdict}</p>
+      <p className="mt-2 font-mono text-xs leading-5 text-[var(--ds-text-secondary)]">
+        {metrics}
+      </p>
+    </div>
+  );
+}
+
 function ScoreCount({ label, value }: { label: string; value: number }) {
   return (
     <div className="px-2 py-1">
@@ -2346,17 +2219,6 @@ function ScoreCount({ label, value }: { label: string; value: number }) {
         {value}
       </p>
       <p className="mt-0.5 text-[var(--ds-text-tertiary)]">{label}</p>
-    </div>
-  );
-}
-
-function CoverageCount({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-md border border-[var(--ds-border-subtle)] bg-[var(--ds-surface-subtle)] px-3 py-3 text-center">
-      <p className="text-xl font-semibold text-[var(--ds-text-primary)]">
-        {value}
-      </p>
-      <p className="mt-1 text-[11px] text-muted-foreground">{label}</p>
     </div>
   );
 }
@@ -2556,7 +2418,7 @@ function FundamentalChart({
   return (
     <Card
       id={`chart-${definition.id}`}
-      className="scroll-mt-24 overflow-hidden"
+      className="scroll-mt-24 overflow-hidden rounded-none border-x-0 border-b-0 shadow-none"
     >
       <CardHeader className="ds-panel-heading flex flex-col items-start justify-between gap-3 sm:flex-row sm:gap-4">
         <div className="min-w-0">
@@ -2750,26 +2612,6 @@ function FundamentalChart({
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-function StatusCard({
-  label,
-  value,
-  note,
-}: {
-  label: string;
-  value: string | number;
-  note: string;
-}) {
-  return (
-    <div className="min-w-0 bg-[var(--ds-surface)] p-3 sm:p-4">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-xl font-semibold tracking-tight text-[var(--ds-text-primary)] sm:text-2xl">
-        {value}
-      </p>
-      <p className="mt-1 text-[11px] text-muted-foreground">{note}</p>
-    </div>
   );
 }
 
