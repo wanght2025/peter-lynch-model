@@ -135,7 +135,7 @@ function metricExplanation(rule: LynchRuleCandidate) {
     return `程序读取：${evidence}。只判断原文明说的数字或方向，不自己增加门槛。`;
   }
   if (rule.automation === 'human') {
-    return `需要查看：${evidence}。补充分析可以整理证据，但最终判断需要人工确认。`;
+    return `需要查看：${evidence}。AI 整理证据并自动判断；只有通过系统校验的来源才进入评分。`;
   }
   return `这条不转成计算指标。需要保留的资料：${evidence}。`;
 }
@@ -352,6 +352,12 @@ export function RuleWorkbench() {
   ).length;
   const scoringCount = rules.filter(
     (rule) => decisionFor(reviews, rule.id).purpose === 'scoring',
+  ).length;
+  const programCount = rules.filter(
+    (rule) => rule.decision === 'scoring' && rule.evaluator === 'program',
+  ).length;
+  const aiCount = rules.filter(
+    (rule) => rule.decision === 'scoring' && rule.evaluator === 'ai',
   ).length;
   const reminderCount = rules.filter(
     (rule) => decisionFor(reviews, rule.id).purpose === 'reminder',
@@ -631,7 +637,11 @@ export function RuleWorkbench() {
                 blockerCount,
                 blockerCount === 0 ? '可以锁定' : '处理完才能锁定',
               ],
-              ['用于评分', scoringCount, '16条程序 + 14条人工确认'],
+              [
+                '用于评分',
+                scoringCount,
+                `${programCount}条程序 + ${aiCount}条AI证据`,
+              ],
               ['只做提醒', reminderCount, `${excludedCount} 条不采用`],
             ].map(([label, value, note]) => (
               <Card
@@ -761,7 +771,7 @@ export function RuleWorkbench() {
                       {currentRule.evaluator === 'program'
                         ? '程序计算'
                         : currentRule.evaluator === 'ai'
-                          ? 'AI整理 + 人工确认'
+                          ? 'AI整理 + 来源校验'
                           : automationLabels[currentRule.automation]}
                     </Badge>
                     {currentDecision.migratedFromOldReview && (
@@ -1066,7 +1076,8 @@ export function RuleWorkbench() {
                     <span className="font-medium">规则库已锁定</span>
                   </div>
                   <p className="mt-3 text-sm leading-6 text-[var(--ds-text-secondary)]">
-                    30条评分规则已经固化。16条由程序计算，14条定性判断需要人工确认。
+                    {scoringCount}条评分规则已经固化。{programCount}条由程序计算，
+                    {aiCount}条由 AI 整理证据并经系统校验后自动判断。
                   </p>
                 </div>
               ) : (

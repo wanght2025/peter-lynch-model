@@ -1,26 +1,11 @@
 import type {
   AnalysisDataset,
   MetricPoint,
-  ReportReference,
 } from '@/lib/analysis-types';
 
-export const ANNUAL_DISPLAY_LIMIT = 10;
 export const ANNUAL_CALCULATION_LIMIT = 11;
 export const QUARTERLY_DISPLAY_LIMIT = 12;
 export const HALF_YEAR_DISPLAY_LIMIT = 10;
-
-export function activeReportReferences(
-  reportRefs: ReportReference[],
-): ReportReference[] {
-  const supersededIds = new Set(
-    reportRefs.flatMap((report) =>
-      report.correctedFromId ? [report.correctedFromId] : [],
-    ),
-  );
-  return reportRefs.filter(
-    (report) => !report.supersededById && !supersededIds.has(report.id),
-  );
-}
 
 function sortAndLimit(points: MetricPoint[], limit: number) {
   return [...points]
@@ -35,21 +20,6 @@ export function applyDatasetWindow(dataset: AnalysisDataset): AnalysisDataset {
     halfYear: sortAndLimit(dataset.halfYear ?? [], HALF_YEAR_DISPLAY_LIMIT),
     quarterly: sortAndLimit(dataset.quarterly, QUARTERLY_DISPLAY_LIMIT),
   };
-}
-
-export function analysisVersionKey(dataset: AnalysisDataset) {
-  const activeHashes = activeReportReferences(dataset.reportRefs)
-    .map((report) => report.fileSha256)
-    .sort()
-    .join(':');
-  return [
-    dataset.companyCode,
-    dataset.priceDate,
-    dataset.priceAdjustment,
-    dataset.ruleVersion,
-    dataset.metricVersion,
-    activeHashes,
-  ].join('|');
 }
 
 export function assertTraceableDataset(dataset: AnalysisDataset) {

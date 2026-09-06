@@ -70,7 +70,6 @@ export const lockedRuleMetadata = {
   counts: rulesData.counts,
   disclosure: rulesData.disclosure,
 };
-export const scoringPolicy = rulesData.scoringPolicy;
 export const ruleCatalog = rulesData.rules as LynchRuleCandidate[];
 export const exclusionCatalog = exclusionsData.items as ExclusionCandidate[];
 

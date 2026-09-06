@@ -4,7 +4,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: '林奇基本面研究',
-  description: '基于官方财报、可追溯计算和人工确认的公司基本面研究工具。',
+  description: '基于官方财报、可追溯计算和 AI 证据校验的公司基本面研究工具。',
   openGraph: {
     title: '林奇基本面研究',
     description:

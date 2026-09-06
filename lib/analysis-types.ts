@@ -64,10 +64,40 @@ export type MetricEvidence = {
   period?: string;
   formula?: string;
   reportRefIds: string[];
+  page?: number;
+  pages?: number[];
+  sourceLabel?: string;
+  sourceQuote?: string;
   sourceCells?: string[];
   sourceName?: string;
   sourceUrl?: string;
+  publishedAt?: string;
   note?: string;
+};
+
+export type NarrativeEvidenceTopic =
+  | 'business'
+  | 'customers'
+  | 'ownership'
+  | 'product'
+  | 'industry'
+  | 'competition'
+  | 'expansion'
+  | 'acquisition'
+  | 'technology'
+  | 'risk'
+  | 'debt'
+  | 'dividend'
+  | 'buyback'
+  | 'insider'
+  | 'spinoff'
+  | 'assets';
+
+export type NarrativeEvidence = {
+  topic: NarrativeEvidenceTopic;
+  reportRefId: string;
+  page: number;
+  quote: string;
 };
 
 export type MetricSource = {
@@ -106,10 +136,22 @@ export type CurrentMarketSnapshot = {
   peTtm?: number;
   pb?: number;
   marketCap?: number;
+  totalShares?: number;
+  floatShares?: number;
   dividendYield?: number;
   sourceName: string;
   sourceUrl: string;
   retrievedAt: string;
+  fieldSources?: Partial<
+    Record<
+      'peTtm' | 'pb' | 'marketCap' | 'totalShares' | 'floatShares',
+      {
+        sourceName: string;
+        sourceUrl: string;
+        date: string;
+      }
+    >
+  >;
 };
 
 export type MetricPoint = {
@@ -186,6 +228,7 @@ export type AnalysisDataset = {
   latestReportPeriod?: string;
   latestComparablePoint?: MetricPoint;
   reportRefs: ReportReference[];
+  narrativeEvidence?: NarrativeEvidence[];
   ruleVersion: string;
   metricVersion: string;
   generatedAt: string;
@@ -210,6 +253,14 @@ export type RuleResult = {
 export type ScoreSummary = {
   score: number | null;
   coverage: number | null;
+  decision:
+    | 'strong'
+    | 'promising'
+    | 'mixed'
+    | 'risk'
+    | 'insufficient';
+  reliable: boolean;
+  minimumCoverage: number;
   positiveCount: number;
   riskCount: number;
   neutralCount: number;
@@ -234,7 +285,15 @@ export type ProgramMetricSnapshot = {
   peTtm?: number | null;
   currentPrice?: number | null;
   earningsPositive?: boolean;
-  earningsCagr5yPercent?: number | null;
+  latestReportPeriod?: string | null;
+  latestComparisonPeriod?: string | null;
+  latestReportingFrequency?: 'quarterly' | 'half_year' | 'annual' | null;
+  latestRevenueGrowthYoYPercent?: number | null;
+  latestRevenueGrowthSequentialPercent?: number | null;
+  latestNetProfitGrowthYoYPercent?: number | null;
+  latestNetProfitGrowthSequentialPercent?: number | null;
+  latestEpsGrowthYoYPercent?: number | null;
+  latestEpsGrowthSequentialPercent?: number | null;
   dividendYieldPercent?: number | null;
   cash?: number | null;
   longTermDebt?: number | null;

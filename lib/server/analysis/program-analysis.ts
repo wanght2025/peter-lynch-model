@@ -5,11 +5,7 @@ import type {
   ProgramAnalysis,
   ProgramMetricSnapshot,
 } from '@/lib/analysis-types';
-import {
-  calculateCagr,
-  calculateScore,
-  evaluateProgramRules,
-} from '@/lib/scoring-engine';
+import { calculateScore, evaluateProgramRules } from '@/lib/scoring-engine';
 
 function number(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
@@ -23,14 +19,40 @@ function evidence(
   formula?: string,
 ): MetricEvidence[] {
   if (!number(value) || !point) return [];
+  const sourceKey: Record<string, string> = {
+    'balance.cash': 'cash',
+    'balance.long_term_debt': 'longTermDebt',
+    'balance.interest_bearing_debt': 'interestBearingDebt',
+    'shares.outstanding': 'sharesOutstanding',
+    'balance.lynch_net_cash_per_share': 'lynchNetCashPerShare',
+    'balance.conservative_net_cash_per_share':
+      'conservativeNetCashPerShare',
+    'balance.equity_ratio': 'equityRatio',
+    'balance.debt_ratio': 'debtRatio',
+    'cashflow.free': 'freeCashFlow',
+    'growth.inventory_yoy': 'inventory',
+    'growth.revenue_yoy': 'revenue',
+    'margin.pretax': 'pretaxMargin',
+    'valuation.pe_history_median': 'adjustedPrice',
+    'valuation.pe_history_min': 'adjustedPrice',
+    'valuation.pe_history_max': 'adjustedPrice',
+    'balance.cash_change': 'cash',
+    'balance.interest_bearing_debt_change': 'interestBearingDebt',
+  };
+  const source = point.metricSources?.[sourceKey[metricId]];
   return [
     {
       metricId,
       value,
-      unit,
+      unit: unit ?? source?.unit,
       period: point.period,
-      formula,
+      formula: formula ?? source?.formula,
       reportRefIds: point.reportRefIds,
+      page: source?.page,
+      pages: source?.pages,
+      sourceLabel: source?.label,
+      sourceName: source?.sourceName,
+      sourceUrl: source?.sourceUrl,
     },
   ];
 }
@@ -44,6 +66,8 @@ function marketEvidence(
 ): MetricEvidence[] {
   const market = dataset.currentMarket;
   if (!number(value) || !market) return [];
+  const source =
+    metricId === 'valuation.pe_ttm' ? market.fieldSources?.peTtm : undefined;
   return [
     {
       metricId,
@@ -52,15 +76,163 @@ function marketEvidence(
       period: market.date,
       formula,
       reportRefIds: [],
-      sourceName: market.sourceName,
-      sourceUrl: market.sourceUrl,
+      sourceName: source?.sourceName ?? market.sourceName,
+      sourceUrl: source?.sourceUrl ?? market.sourceUrl,
     },
   ];
 }
 
 function percentGrowth(current?: number, prior?: number) {
-  if (!number(current) || !number(prior) || prior === 0) return null;
+  if (
+    !number(current) ||
+    !number(prior) ||
+    prior === 0 ||
+    current < 0 ||
+    prior < 0
+  )
+    return null;
   return ((current - prior) / Math.abs(prior)) * 100;
+}
+
+const H2_FLOW_METRICS = [
+  'revenue',
+  'netProfit',
+  'grossProfit',
+  'operatingProfit',
+  'pretaxProfit',
+  'operatingCashFlow',
+  'capitalExpenditure',
+  'freeCashFlow',
+] as const;
+
+function priorYearPeriod(period: string) {
+  const match = period.match(/^(\d{4})(Q[1-4]|H[12])$/);
+  return match ? `${Number(match[1]) - 1}${match[2]}` : undefined;
+}
+
+function isAdjacentPeriod(current: string, previous: string) {
+  const currentMatch = current.match(/^(\d{4})(Q[1-4]|H[12])$/);
+  const previousMatch = previous.match(/^(\d{4})(Q[1-4]|H[12])$/);
+  if (!currentMatch || !previousMatch) return false;
+  const [currentYear, currentPart] = [Number(currentMatch[1]), currentMatch[2]];
+  const [previousYear, previousPart] = [
+    Number(previousMatch[1]),
+    previousMatch[2],
+  ];
+  const index = (year: number, part: string) =>
+    year * (part.startsWith('Q') ? 4 : 2) + Number(part.slice(1));
+  return (
+    currentPart.startsWith('Q') === previousPart.startsWith('Q') &&
+    index(currentYear, currentPart) === index(previousYear, previousPart) + 1
+  );
+}
+
+function h2Points(dataset: AnalysisDataset) {
+  const annualByYear = new Map(
+    dataset.annual.map((point) => [point.period, point]),
+  );
+  return (dataset.halfYear ?? []).flatMap((half) => {
+    const year = half.period.match(/^(\d{4})H1$/)?.[1];
+    const annual = year ? annualByYear.get(year) : undefined;
+    if (!year || !annual) return [];
+    const point: MetricPoint = {
+      period: `${year}H2`,
+      reportRefIds: [
+        ...new Set([...annual.reportRefIds, ...half.reportRefIds]),
+      ],
+      metricSources: {},
+    };
+    for (const metric of H2_FLOW_METRICS) {
+      const annualValue = annual[metric];
+      const halfValue = half[metric];
+      if (number(annualValue) && number(halfValue)) {
+        point[metric] = annualValue - halfValue;
+      }
+    }
+    for (const key of [
+      'cash',
+      'inventory',
+      'totalAssets',
+      'totalLiabilities',
+      'shareholdersEquity',
+      'interestBearingDebt',
+      'shortTermBorrowings',
+      'longTermBorrowings',
+      'longTermDebt',
+    ]) {
+      const value = annual[key];
+      if (number(value)) point[key] = value;
+    }
+    return [point];
+  });
+}
+
+function reportingPoints(dataset: AnalysisDataset) {
+  if (dataset.quarterly.length >= 2) {
+    return {
+      frequency: 'quarterly' as const,
+      points: [...dataset.quarterly].sort((a, b) =>
+        a.period.localeCompare(b.period),
+      ),
+    };
+  }
+  if (
+    dataset.security?.market === 'HK' &&
+    (dataset.halfYear?.length ?? 0) >= 1
+  ) {
+    const latestHalfYear = [...(dataset.halfYear ?? [])]
+      .sort((a, b) => a.period.localeCompare(b.period))
+      .at(-1);
+    const latestAnnualYear = Number(dataset.annual.at(-1)?.period);
+    const latestHalfYearYear = Number(latestHalfYear?.period.slice(0, 4));
+    if (!(latestHalfYearYear > latestAnnualYear)) {
+      return {
+        frequency: 'annual' as const,
+        points: [...dataset.annual].sort((a, b) =>
+          a.period.localeCompare(b.period),
+        ),
+      };
+    }
+    return {
+      frequency: 'half_year' as const,
+      points: [...(dataset.halfYear ?? []), ...h2Points(dataset)].sort((a, b) =>
+        a.period.localeCompare(b.period),
+      ),
+    };
+  }
+  return {
+    frequency: 'annual' as const,
+    points: [...dataset.annual].sort((a, b) =>
+      a.period.localeCompare(b.period),
+    ),
+  };
+}
+
+function latestReportComparison(dataset: AnalysisDataset) {
+  const { frequency, points } = reportingPoints(dataset);
+  const current = points.at(-1);
+  if (!current) {
+    return {
+      frequency,
+      current: undefined,
+      sequential: undefined,
+      priorYear: undefined,
+    };
+  }
+  const previous = points.at(-2);
+  const sequential =
+    frequency !== 'annual' &&
+    previous &&
+    isAdjacentPeriod(current.period, previous.period)
+      ? previous
+      : undefined;
+  const priorPeriod = priorYearPeriod(current.period);
+  const priorYear = priorPeriod
+    ? points.find((point) => point.period === priorPeriod)
+    : points.find(
+        (point) => point.period === String(Number(current.period) - 1),
+      );
+  return { frequency, current, sequential, priorYear };
 }
 
 function trend(values: Array<number | undefined>) {
@@ -75,42 +247,6 @@ function trend(values: Array<number | undefined>) {
       : ('stable' as const);
 }
 
-function annualCagr(dataset: AnalysisDataset, years: number) {
-  const end = dataset.annual.at(-1);
-  if (!end || !number(end.eps)) return null;
-  const endYear = Number(end.period.slice(0, 4));
-  const start = dataset.annual.find(
-    (point) => Number(point.period.slice(0, 4)) === endYear - years,
-  );
-  return start && number(start.eps)
-    ? calculateCagr(start.eps, end.eps, years)
-    : null;
-}
-
-function latestComparablePeriods(dataset: AnalysisDataset) {
-  if (dataset.security?.market === 'A_SHARE' && dataset.quarterly.length >= 5) {
-    return {
-      current: dataset.quarterly.at(-1),
-      prior: dataset.quarterly.at(-5),
-    };
-  }
-  const half = dataset.halfYear ?? [];
-  if (dataset.security?.market === 'HK' && half.length >= 2) {
-    const current = half.at(-1);
-    const year = Number(current?.period.slice(0, 4));
-    return {
-      current,
-      prior: half.find(
-        (point) => Number(point.period.slice(0, 4)) === year - 1,
-      ),
-    };
-  }
-  return {
-    current: dataset.annual.at(-1),
-    prior: dataset.annual.at(-2),
-  };
-}
-
 export function buildProgramAnalysis(
   dataset: AnalysisDataset,
 ): ProgramAnalysis {
@@ -118,15 +254,43 @@ export function buildProgramAnalysis(
   const priorAnnual = dataset.latestComparablePoint
     ? dataset.annual.at(-1)
     : dataset.annual.at(-2);
-  const comparable = latestComparablePeriods(dataset);
-  const earningsCagr5yPercent = annualCagr(dataset, 5);
+  const latestComparison = latestReportComparison(dataset);
+  const latestReport = latestComparison.current ?? dataset.annual.at(-1);
+  const latestPriorYear = latestComparison.priorYear;
+  const latestSequential = latestComparison.sequential;
+  const annualCurrent = dataset.annual.at(-1);
+  const annualPrior = dataset.annual.at(-2);
   const inventoryGrowthYoYPercent = percentGrowth(
-    comparable.current?.inventory,
-    comparable.prior?.inventory,
+    annualCurrent?.inventory,
+    annualPrior?.inventory,
   );
   const revenueGrowthYoYPercent = percentGrowth(
-    comparable.current?.revenue,
-    comparable.prior?.revenue,
+    annualCurrent?.revenue,
+    annualPrior?.revenue,
+  );
+  const latestRevenueGrowthYoYPercent = percentGrowth(
+    latestReport?.revenue,
+    latestPriorYear?.revenue,
+  );
+  const latestRevenueGrowthSequentialPercent = percentGrowth(
+    latestReport?.revenue,
+    latestSequential?.revenue,
+  );
+  const latestNetProfitGrowthYoYPercent = percentGrowth(
+    latestReport?.netProfit,
+    latestPriorYear?.netProfit,
+  );
+  const latestNetProfitGrowthSequentialPercent = percentGrowth(
+    latestReport?.netProfit,
+    latestSequential?.netProfit,
+  );
+  const latestEpsGrowthYoYPercent = percentGrowth(
+    latestReport?.eps,
+    latestPriorYear?.eps,
+  );
+  const latestEpsGrowthSequentialPercent = percentGrowth(
+    latestReport?.eps,
+    latestSequential?.eps,
   );
   const derivedFreeCashFlow = (point?: MetricPoint) =>
     number(point?.freeCashFlow)
@@ -212,42 +376,6 @@ export function buildProgramAnalysis(
       : null;
 
   const evidenceByRule: Record<string, MetricEvidence[]> = {
-    'LYN-13-PE-HALF-DOUBLE': [
-      ...marketEvidence(
-        'valuation.pe_ttm',
-        dataset.currentMarket?.peTtm,
-        dataset,
-        '倍',
-      ),
-      ...evidence(
-        'growth.earnings_cagr_5y',
-        earningsCagr5yPercent,
-        dataset.annual.at(-1),
-        '%',
-        '最近5个完整年度EPS复合增长率',
-      ),
-    ],
-    'LYN-13-DIVIDEND-PEG': [
-      ...marketEvidence(
-        'valuation.pe_ttm',
-        dataset.currentMarket?.peTtm,
-        dataset,
-        '倍',
-      ),
-      ...evidence(
-        'growth.earnings_cagr_5y',
-        earningsCagr5yPercent,
-        dataset.annual.at(-1),
-        '%',
-        '最近5个完整年度EPS复合增长率',
-      ),
-      ...marketEvidence(
-        'valuation.dividend_yield',
-        dataset.currentMarket?.dividendYield,
-        dataset,
-        '%',
-      ),
-    ],
     'LYN-13-NET-CASH': [
       ...evidence('balance.cash', latest?.cash, latest, dataset.currency),
       ...evidence(
@@ -317,13 +445,13 @@ export function buildProgramAnalysis(
       ...evidence(
         'growth.inventory_yoy',
         inventoryGrowthYoYPercent,
-        comparable.current,
+        annualCurrent,
         '%',
       ),
       ...evidence(
         'growth.revenue_yoy',
         revenueGrowthYoYPercent,
-        comparable.current,
+        annualCurrent,
         '%',
       ),
     ],
@@ -333,12 +461,6 @@ export function buildProgramAnalysis(
       latest,
       '%',
       '税前利润÷营业收入',
-    ),
-    'LYN-15-FAST-GROWTH-PREFERENCE': evidence(
-      'growth.earnings_cagr_5y',
-      earningsCagr5yPercent,
-      dataset.annual.at(-1),
-      '%',
     ),
     'LYN-10-PE-CONTEXT': [
       ...marketEvidence(
@@ -387,7 +509,16 @@ export function buildProgramAnalysis(
     earningsPositive: number(latest?.netProfit)
       ? latest.netProfit > 0
       : undefined,
-    earningsCagr5yPercent,
+    latestReportPeriod: latestReport?.period ?? null,
+    latestComparisonPeriod:
+      latestPriorYear?.period ?? latestSequential?.period ?? null,
+    latestReportingFrequency: latestComparison.frequency,
+    latestRevenueGrowthYoYPercent,
+    latestRevenueGrowthSequentialPercent,
+    latestNetProfitGrowthYoYPercent,
+    latestNetProfitGrowthSequentialPercent,
+    latestEpsGrowthYoYPercent,
+    latestEpsGrowthSequentialPercent,
     dividendYieldPercent: dataset.currentMarket?.dividendYield ?? null,
     cash: latest?.cash ?? null,
     longTermDebt: latest?.longTermDebt ?? null,

@@ -2,12 +2,12 @@
 
 import { useEffect, useState, type SyntheticEvent } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Search } from 'lucide-react';
+import { ArrowRight, Database, FileCheck2, Search, Sparkles } from 'lucide-react';
 
 import { normalizeSecurityCode } from '@/lib/official-filings';
 import type { AnalysisDataset } from '@/lib/analysis-types';
 
-const DATASET_STORAGE_KEY = 'lynch-official-analysis-dataset-v8';
+const DATASET_STORAGE_KEY = 'lynch-official-analysis-dataset-v11';
 
 export function ResearchHome() {
   const [query, setQuery] = useState('');
@@ -132,6 +132,45 @@ export function ResearchHome() {
             </p>
           )}
         </form>
+
+        <section
+          aria-label="软件如何得出判断"
+          className="mt-16 grid gap-px overflow-hidden border border-[var(--ds-border-subtle)] bg-[var(--ds-border-subtle)] sm:grid-cols-3"
+        >
+          {[
+            {
+              icon: Database,
+              step: '01',
+              title: '只读真实披露',
+              text: '从交易所和法定财报提取数字、页码与原文，缺数据不猜。',
+            },
+            {
+              icon: Sparkles,
+              step: '02',
+              title: 'AI 自动分类补证',
+              text: '自动判断公司可能属于哪些林奇类型，并补齐定性规则证据。',
+            },
+            {
+              icon: FileCheck2,
+              step: '03',
+              title: '先结论，后证据',
+              text: '直接告诉你优势、风险和未知项；证据覆盖不足时拒绝给高分。',
+            },
+          ].map(({ icon: Icon, step, title, text }) => (
+            <div key={step} className="bg-[var(--ds-surface)] p-5">
+              <div className="flex items-center justify-between">
+                <Icon className="size-5 text-[var(--ds-accent)]" aria-hidden />
+                <span className="font-mono text-xs text-[var(--ds-text-disabled)]">
+                  {step}
+                </span>
+              </div>
+              <h2 className="mt-4 text-sm font-semibold">{title}</h2>
+              <p className="mt-2 text-sm leading-6 text-[var(--ds-text-secondary)]">
+                {text}
+              </p>
+            </div>
+          ))}
+        </section>
 
         {recent && (
           <section className="mt-20 border-t border-[var(--ds-border-subtle)] pt-6">

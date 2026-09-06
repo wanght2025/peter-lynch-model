@@ -1,6 +1,7 @@
 import { ahPairCode } from '@/lib/ah-pairs';
 import {
   filingCoverage,
+  normalizeSecurityCode,
   financialCompanyByName,
   reportingPolicyFor,
   SecurityNotFoundError,
@@ -32,8 +33,9 @@ function collectStocks(value: unknown, result: HkStock[] = []): HkStock[] {
   const code = stringField(row, 'c', 'code', 'stockCode', 'stock_code');
   const id = stringField(row, 'i', 'id', 'stockId', 'stock_id');
   const name = stringField(row, 'n', 'name', 'stockName', 'stock_name');
-  if (/^\d{1,5}$/.test(code) && id && name)
-    result.push({ code: code.padStart(5, '0'), id, name });
+  const normalized = normalizeSecurityCode(`HK:${code}`);
+  if (normalized && id && name)
+    result.push({ code: normalized.code, id, name });
   Object.values(row).forEach((item) => collectStocks(item, result));
   return result;
 }
@@ -53,6 +55,8 @@ function collectAnnouncementRows(value: unknown): HkexRecord[] {
 }
 
 function classifyReport(title: string): OfficialFiling['reportKind'] | null {
+  if (/(INTERIM RESULTS ANNOUNCEMENT|中期業績公告|中期业绩公告)/i.test(title))
+    return 'half_year';
   if (/(ANNUAL REPORT|年度報告|年度报告|年報|年报)/i.test(title))
     return 'annual';
   if (/(INTERIM REPORT|HALF[- ]YEAR REPORT|中期報告|中期报告|半年報告|半年报告)/i.test(title))
@@ -89,6 +93,7 @@ function inferredFiscalYear(
 
 function selectReportPeriods(reports: OfficialFiling[]) {
   const displayPreference = (report: OfficialFiling) =>
+    (report.isSummary ? 0 : 100) +
     (report.isCorrection ? 10 : 0) +
     (report.language === 'bilingual' ? 3 : report.language === 'zh' ? 2 : 1);
   const grouped = new Map<string, OfficialFiling[]>();
@@ -103,7 +108,7 @@ function selectReportPeriods(reports: OfficialFiling[]) {
       const display = [...versions].sort(
         (a, b) => displayPreference(b) - displayPreference(a),
       )[0];
-      const english = versions.find((report) => report.language === 'en');
+      const english = versions.find((report) => report.language === 'en' && report.isSummary === display.isSummary);
       return english && english.url !== display.url
         ? {
             ...display,
@@ -160,10 +165,10 @@ async function activeStocks(language: 'e' | 'c') {
   return stocks;
 }
 
-async function titleSearch(stockId: string, language: 'en' | 'zh') {
+async function titleSearch(stockId: string, language: 'en' | 'zh', resultsOnly = false) {
   const today = new Date();
   const start = new Date(today);
-  start.setUTCFullYear(start.getUTCFullYear() - 11);
+  start.setUTCFullYear(start.getUTCFullYear() - (resultsOnly ? 1 : 11));
   const compact = (date: Date) =>
     date.toISOString().slice(0, 10).replaceAll('-', '');
   const params = new URLSearchParams({
@@ -177,7 +182,7 @@ async function titleSearch(stockId: string, language: 'en' | 'zh') {
     toDate: compact(today),
     title: '',
     searchType: '1',
-    t1code: '40000',
+    t1code: resultsOnly ? '-2' : '40000',
     t2Gcode: '-2',
     t2code: '-2',
     rowRange: '2000',
@@ -224,6 +229,26 @@ export async function lookupHkShare(code: string): Promise<OfficialLookup> {
       titleSearch(stock.id, 'zh').catch(() => []),
     ])
   ).flat();
+  const today = new Date();
+  const hasCurrentInterim = rows.some((row) => {
+    const title = stringField(row, 'TITLE', 'title');
+    const date = normalizeDate(stringField(row, 'DATE_TIME', 'dateTime'));
+    return classifyReport(title) === 'half_year' &&
+      inferredFiscalYear(title, date, 'half_year') === today.getUTCFullYear();
+  });
+  let supplementFailed = false;
+  if (today.getUTCMonth() >= 5 && !hasCurrentInterim) {
+    const supplementary = await Promise.allSettled([
+      titleSearch(stock.id, 'en', true),
+      titleSearch(stock.id, 'zh', true),
+    ]);
+    for (const result of supplementary) {
+      if (result.status === 'rejected') { supplementFailed = true; continue; }
+      rows.push(...result.value.filter((row) =>
+        /INTERIM RESULTS ANNOUNCEMENT|中期業績公告|中期业绩公告/i.test(stringField(row, 'TITLE', 'title')),
+      ));
+    }
+  }
   const seen = new Set<string>();
   const reports = selectReportPeriods(
     rows
@@ -260,7 +285,7 @@ export async function lookupHkShare(code: string): Promise<OfficialLookup> {
         fiscalYear: inferredFiscalYear(title, date, kind),
         language: languageOf(title),
         isCorrection: /(REVISED|UPDATED|更正|修訂|更新)/i.test(title),
-        isSummary: false,
+        isSummary: /INTERIM RESULTS ANNOUNCEMENT|中期業績公告|中期业绩公告/i.test(title),
       };
     })
       .filter((item): item is OfficialFiling => item !== null),
@@ -269,6 +294,9 @@ export async function lookupHkShare(code: string): Promise<OfficialLookup> {
   const companyName = chinese?.name || stock.name;
   const isFinancialCompany = financialCompanyByName(companyName);
   const warnings: string[] = [];
+  if (supplementFailed) warnings.push('部分中期业绩公告补充查询失败，已保留取得的完整报告。');
+  if (reports.some((report) => report.isSummary))
+    warnings.push('最新中期完整报告尚未取得，采用正式中期业绩公告；未披露的报表项目保持缺失。');
   if (coverage.annual < 10)
     warnings.push(`只找到${coverage.annual}份完整年报，可能是上市年限不足或报告仅以另一语言披露。`);
   if (coverage.halfYear < 10)

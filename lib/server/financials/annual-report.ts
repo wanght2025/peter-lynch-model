@@ -1,6 +1,11 @@
 import { extractText, getDocumentProxy } from 'unpdf';
 
-import type { MetricPoint, MetricSource } from '@/lib/analysis-types';
+import type {
+  MetricPoint,
+  MetricSource,
+  NarrativeEvidence,
+  NarrativeEvidenceTopic,
+} from '@/lib/analysis-types';
 import type { OfficialFiling } from '@/lib/official-filings';
 
 type TextPage = { number: number; text: string; lines: string[] };
@@ -14,6 +19,11 @@ export type FinancialReportExtraction = {
   points: MetricPoint[];
   financialCurrency: 'CNY' | 'HKD' | 'USD';
   warnings: string[];
+  narrativeEvidence?: NarrativeEvidence[];
+};
+
+type FinancialReportExtractionOptions = {
+  includeNarrative?: boolean;
 };
 
 const NUMBER_TOKEN = /\(?-?\d[\d,]*(?:\.\d+)?\)?|[–—-]/g;
@@ -42,7 +52,18 @@ function numberTokens(value: string) {
     .filter((item): item is number => item !== undefined);
 }
 
+function isOrdinalPlaceholder(values: number[]) {
+  return (
+    values.length === 2 &&
+    Number.isInteger(values[0]) &&
+    Math.abs(values[0]) <= 20 &&
+    values[1] === 0
+  );
+}
+
 function unitInfo(text: string) {
+  if (/RMB\s*[’']?\s*0{3}\b|人民币\s*千元/i.test(text))
+    return { multiplier: 1_000, label: '人民币千元' };
   if (/RMB\s*[’']?\s*Million|人民[幣币]百[萬万]元/i.test(text))
     return { multiplier: 1_000_000, label: '人民币百万元' };
   if (/HKD\s*[’']?\s*Million|港[幣币]百[萬万]元/i.test(text))
@@ -70,14 +91,14 @@ function findStartPage(
   let best: { index: number; score: number } | null = null;
   for (let index = 0; index < pages.length; index += 1) {
     const page = pages[index];
-    if (!heading.some((pattern) => pattern.test(page.text))) continue;
+    if (!heading.some((pattern) => pattern.test(cleanLine(page.text)))) continue;
     // Some CNInfo statements put the title on one page and the column
     // headings/line items on the following one or two pages.
     const nearbyText = pages
       .slice(index, index + 3)
       .map((item) => item.text)
       .join('\n');
-    const score = signals.filter((pattern) => pattern.test(nearbyText)).length;
+    const score = signals.filter((pattern) => pattern.test(cleanLine(nearbyText))).length;
     if (score && (!best || score > best.score)) best = { index, score };
   }
   return best ? best.index : -1;
@@ -95,8 +116,14 @@ function pairFromMatch(
 ): ValuePair | null {
   for (const page of pages) {
     for (let index = 0; index < page.lines.length; index += 1) {
-      const line = page.lines[index];
-      const pattern = patterns.find((candidate) => candidate.test(line));
+      let line = page.lines[index];
+      let pattern = patterns.find((candidate) => candidate.test(line));
+      if (!pattern && !/\d/.test(line)) {
+        for (let length = 2; length <= 3 && !pattern; length += 1) {
+          line = page.lines.slice(index, index + length).join(' ');
+          pattern = patterns.find((candidate) => candidate.test(line));
+        }
+      }
       if (!pattern) continue;
       const match = line.match(pattern);
       const start =
@@ -104,7 +131,8 @@ function pairFromMatch(
       let values = numberTokens(line.slice(start));
       for (
         let offset = 1;
-        values.length < 2 && offset <= followingLines;
+        (values.length < 2 || (applyUnit && isOrdinalPlaceholder(values))) &&
+        offset <= followingLines;
         offset += 1
       ) {
         values = [...values, ...numberTokens(page.lines[index + offset] ?? '')];
@@ -138,14 +166,8 @@ function allPairsFromMatch(pages: TextPage[], patterns: RegExp[]) {
       const start =
         match?.index === undefined ? 0 : match.index + match[0].length;
       const values = numberTokens(line.slice(start));
-      const pair =
-        values.length === 2 &&
-        Math.abs(values[0]) <= 200 &&
-        Math.abs(values[1]) >= 1_000_000
-          ? [values[1], 0]
-          : values.length >= 2
-            ? values.slice(-2)
-            : [0, 0];
+      if (values.length < 2 || isOrdinalPlaceholder(values)) continue;
+      const pair = values.slice(-2);
       results.push({
         current: pair[0] * unit.multiplier,
         previous: pair[1] * unit.multiplier,
@@ -389,7 +411,7 @@ function reportPeriods(filing: OfficialFiling) {
 const STATEMENT_OUTLINE_HEADINGS = [
   /合并利润表/,
   /綜合收益表/,
-  /Consolidated (?:Income Statement|Statement of Profit or Loss)/i,
+  /Consolidated\s+(?:Income\s+Statement|Statement\s+of\s+Profit\s+or\s+Loss(?:\s+and\s+Other\s+Comprehensive\s+Income)?)/i,
   /合并资产负债表/,
   /綜合財務狀況表/,
   /Consolidated Statement of Financial Position/i,
@@ -397,6 +419,83 @@ const STATEMENT_OUTLINE_HEADINGS = [
   /綜合現金流量表/,
   /Consolidated Statement of Cash Flows/i,
 ];
+
+const NARRATIVE_KEYWORDS: Record<NarrativeEvidenceTopic, RegExp> = {
+  business:
+    /主营业务|主要业务|主要产品|业务模式|principal activities|business review|revenue by segment/i,
+  customers:
+    /前五名客户|五大客户|最大客户|主要客户|客户集中|five largest customers|largest customer|customer concentration/i,
+  ownership:
+    /机构持股|机构投资者|前十名股东|持股情况|institutional ownership|substantial shareholders?|shareholding structure/i,
+  product:
+    /产品结构|主要产品|产品收入|品牌系列|product mix|principal products?|revenue by product/i,
+  industry:
+    /行业环境|行业发展|行业格局|市场需求|供需|industry outlook|industry development|market demand|supply and demand/i,
+  competition:
+    /竞争格局|竞争优势|市场地位|市场份额|competitive advantage|competition|market position|market share/i,
+  expansion:
+    /扩张计划|扩产|新增产能|门店拓展|增长计划|expansion plan|capacity expansion|new stores|growth plan/i,
+  acquisition:
+    /收购|并购|重大资产重组|对外投资|acquisition|merger|business combination|external investment/i,
+  technology:
+    /研发投入|核心技术|技术创新|数字化|research and development|core technolog|technological innovation|digitalization/i,
+  risk:
+    /经营风险|风险因素|重大风险|持续经营|principal risks?|risk factors?|going concern/i,
+  debt:
+    /债务到期|借款到期|有息负债|融资安排|debt maturit|borrowings? due|interest-bearing debt|financing arrangement/i,
+  dividend: /股息|分红|派息|dividend|distribution/i,
+  buyback: /回购|购回股份|share repurchase|buyback/i,
+  insider:
+    /董事权益|董事持股|管理层持股|董监高增持|董监高减持|directors?' interests|management shareholding|insider (?:buying|selling)/i,
+  spinoff: /分拆|剥离|出售附属|spin[- ]?off|divest(?:ment|ed)?/i,
+  assets:
+    /投资物业|土地储备|矿业权|品牌价值|隐蔽资产|investment propert|land bank|mineral rights|brand value|hidden assets/i,
+};
+
+const MAX_NARRATIVE_EVIDENCE = 36;
+const MAX_NARRATIVE_PER_TOPIC = 2;
+const MAX_NARRATIVE_QUOTE_LENGTH = 360;
+
+function extractNarrativeEvidence(
+  pages: TextPage[],
+  reportRefId: string,
+): NarrativeEvidence[] {
+  const evidence: NarrativeEvidence[] = [];
+  const seen = new Set<string>();
+  for (const [topic, keyword] of Object.entries(NARRATIVE_KEYWORDS) as Array<[
+    NarrativeEvidenceTopic,
+    RegExp,
+  ]>) {
+    let topicCount = 0;
+    for (const page of pages) {
+      for (let index = 0; index < page.lines.length; index += 1) {
+        if (!keyword.test(page.lines[index])) continue;
+        const quote = page.lines
+          .slice(Math.max(0, index - 1), index + 2)
+          .join(' ')
+          .slice(0, MAX_NARRATIVE_QUOTE_LENGTH)
+          .trim();
+        const dedupeKey = quote.toLocaleLowerCase();
+        if (!quote || seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        evidence.push({ topic, reportRefId, page: page.number, quote });
+        topicCount += 1;
+        if (
+          topicCount >= MAX_NARRATIVE_PER_TOPIC ||
+          evidence.length >= MAX_NARRATIVE_EVIDENCE
+        )
+          break;
+      }
+      if (
+        topicCount >= MAX_NARRATIVE_PER_TOPIC ||
+        evidence.length >= MAX_NARRATIVE_EVIDENCE
+      )
+        break;
+    }
+    if (evidence.length >= MAX_NARRATIVE_EVIDENCE) break;
+  }
+  return evidence;
+}
 
 async function pageText(
   pdf: Awaited<ReturnType<typeof getDocumentProxy>>,
@@ -448,6 +547,7 @@ async function outlinedStatementPages(
 export async function extractFinancialReport(
   bytes: Uint8Array,
   filing: OfficialFiling,
+  options: FinancialReportExtractionOptions = {},
 ): Promise<FinancialReportExtraction> {
   if (!filing.fiscalYear) throw new Error('定期报告缺少财政年度');
   const pdf = await getDocumentProxy(bytes);
@@ -460,6 +560,15 @@ export async function extractFinancialReport(
       lines: text.split(/\r?\n/).map(cleanLine).filter(Boolean),
     }));
   }
+  let narrativePages = pages;
+  if (options.includeNarrative && pages.length < pdf.numPages) {
+    const extracted = await extractText(pdf);
+    narrativePages = extracted.text.map((text, index) => ({
+      number: index + 1,
+      text,
+      lines: text.split(/\r?\n/).map(cleanLine).filter(Boolean),
+    }));
+  }
 
   const incomeStart = findStartPage(
     pages,
@@ -467,8 +576,12 @@ export async function extractFinancialReport(
       /合并(?:年初[到至]报告期末)?利润表/,
       /綜合收益表/,
       /Consolidated Income Statement/i,
+      /Consolidated\s+Statement\s+of\s+Profit\s+or\s+Loss(?:\s+and\s+Other\s+Comprehensive\s+Income)?/i,
     ],
-    [/营业总收入|Revenues|Value-added Services/i, /营业成本|Cost of revenues/i],
+    [
+      /营业总收入|Revenues|REVENUE\b|Value-added Services/i,
+      /营业成本|Cost of revenues/i,
+    ],
   );
   const balanceStart = findStartPage(
     pages,
@@ -477,7 +590,10 @@ export async function extractFinancialReport(
       /綜合財務狀況表/,
       /Consolidated Statement of Financial Position/i,
     ],
-    [/货币资金|Cash and cash equivalents/i, /流动资产|Current assets/i],
+    [
+      /货币资金|Cash and cash equivalents|Cash and bank balances/i,
+      /流动资产|Current assets/i,
+    ],
   );
   const cashFlowStart = findStartPage(
     pages,
@@ -486,7 +602,9 @@ export async function extractFinancialReport(
       /綜合現金流量表/,
       /Consolidated Statement of Cash Flows/i,
     ],
-    [/经营活动产生的现金流量|Cash flows from operating activities/i],
+    [
+      /经营活动产生的现金流量|Cash flows from operating activities|Net cash flows/i,
+    ],
   );
   const income = statementPages(pages, incomeStart);
   const balance = statementPages(pages, balanceStart);
@@ -508,7 +626,7 @@ export async function extractFinancialReport(
     /^一、营业收入/,
     /^营业收入/,
     /^营业总收入/,
-    /^Revenue\b/i,
+    /^Revenues?\b/i,
   ]);
   if (!revenue) {
     revenue = sumPairs(
@@ -527,6 +645,8 @@ export async function extractFinancialReport(
     );
   }
   setPair(current, previous, 'revenue', revenue);
+  setPair(current, previous, 'grossProfit', pairFromMatch(income, [/^Gross profit\b/i], 0));
+  setPair(current, previous, 'operatingProfit', pairFromMatch(income, [/^Operating profit\b/i, /^Profit from operations\b/i], 0));
   setPair(
     current,
     previous,
@@ -535,8 +655,10 @@ export async function extractFinancialReport(
       /归属于母公司(?:股东|所有者)的净利润/,
       /归属于上市公司股东的净利润/,
       /^Equity holders of the Company/i,
+      /^Owners of the Company/i,
       /Profit attributable to owners of the Company/i,
-    ]),
+      /Attributable to owners of the parent/i,
+    ], 6),
   );
   setPair(
     current,
@@ -555,26 +677,52 @@ export async function extractFinancialReport(
     'eps',
     pairFromMatch(
       income,
-      [/基本每股收益/, /^[–—-]\s*basic\b/i, /^Basic earnings per share/i],
+      [/基本每股收益/, /^[–—-]\s*basic\b/i, /^Basic earnings per share/i, /^Basic and diluted\b/i, /^Basic\s*$/i],
       2,
       false,
     ),
+  );
+  const flowKeys = new Set(Object.keys(previous));
+  const totalAssets = pairFromMatch(
+    balance,
+    [
+      /^资产总计(?:\s|$)/,
+      /^資產總額(?:\s|$)/,
+      /^Total assets(?!\s+less current liabilities)(?:\s|$)/i,
+    ],
+    0,
+  );
+  const totalNonCurrentAssets = pairFromMatch(
+    balance,
+    [
+      /^非流动资产合计/,
+      /^非流動資產總額/,
+      /^Total non-current assets(?:\s|$)/i,
+    ],
+    0,
+  );
+  const totalCurrentAssets = pairFromMatch(
+    balance,
+    [/^流动资产合计/, /^流動資產總額/, /^Total current assets(?:\s|$)/i],
+    0,
   );
   setPair(
     current,
     previous,
     'totalAssets',
-    pairFromMatch(balance, [/^资产总计/, /^資產總額/, /^Total assets\b/i], 0),
+    totalAssets ??
+      (totalNonCurrentAssets && totalCurrentAssets
+        ? sumPairs(
+            [totalNonCurrentAssets, totalCurrentAssets],
+            '资产总额（由流动及非流动资产合计推导）',
+            '非流动资产合计＋流动资产合计',
+          )
+        : null),
   );
-  setPair(
-    current,
-    previous,
-    'totalLiabilities',
-    pairFromMatch(
-      balance,
-      [/^负债合计/, /^負債總額/, /^Total liabilities\b/i],
-      0,
-    ),
+  const totalLiabilities = pairFromMatch(
+    balance,
+    [/^负债合计(?:\s|$)/, /^負債總額(?:\s|$)/, /^Total liabilities(?:\s|$)/i],
+    0,
   );
   setPair(
     current,
@@ -591,6 +739,35 @@ export async function extractFinancialReport(
       0,
     ),
   );
+  if (totalLiabilities) {
+    setPair(current, previous, 'totalLiabilities', totalLiabilities);
+  } else if (
+    typeof current.totalAssets === 'number' &&
+    typeof previous.totalAssets === 'number' &&
+    typeof current.shareholdersEquity === 'number' &&
+    typeof previous.shareholdersEquity === 'number'
+  ) {
+    const assetsSource = current.metricSources?.totalAssets;
+    const equitySource = current.metricSources?.shareholdersEquity;
+    if (assetsSource && equitySource) {
+      setPair(current, previous, 'totalLiabilities', {
+        current: current.totalAssets - current.shareholdersEquity,
+        previous: previous.totalAssets - previous.shareholdersEquity,
+        source: {
+          page: assetsSource.page ?? equitySource.page ?? 0,
+          pages: [
+            ...new Set([
+              ...sourcePages(assetsSource),
+              ...sourcePages(equitySource),
+            ]),
+          ],
+          label: '负债总额（由资产总额及股东权益推导）',
+          unit: '元',
+          formula: '资产总额－股东权益',
+        },
+      });
+    }
+  }
   setPair(
     current,
     previous,
@@ -602,6 +779,7 @@ export async function extractFinancialReport(
         /^現金及現金等價物/,
         /^Cash and cash equivalents/i,
         /^Bank balances and cash/i,
+        /^Cash and bank balances/i,
       ],
       0,
     ),
@@ -612,11 +790,14 @@ export async function extractFinancialReport(
     'inventory',
     pairFromMatch(balance, [/^存货/, /^存貨/, /^Inventories\b/i], 0),
   );
+  setPair(current, previous, 'tradeReceivables', pairFromMatch(balance, [/^Trade receivables\b/i], 0));
+  setPair(current, previous, 'tradePayables', pairFromMatch(balance, [/^Trade payables\b/i], 0));
   const sectionBorrowings = pairsBySection(balance, [
     /^借款$/,
     /^Borrowings(?! due )\b/i,
     /^Bank borrowings\b/i,
     /^Other borrowings\b/i,
+    /^Interest-bearing bank(?: and other)? borrowings\b/i,
   ]);
   const shortTermBorrowings = sumPairs(
     [
@@ -765,6 +946,16 @@ export async function extractFinancialReport(
       '短期借款＋一年内到期非流动负债＋长期借款＋应付债券/融资票据＋租赁负债；若“一年内到期非流动负债”已包含流动租赁部分，则只另加非流动租赁负债',
     ),
   );
+  if (filing.reportKind === 'half_year' && /^\d{5}$/.test(filing.code)) {
+    // HK interim comparative balance columns are prior year-end balances.
+    // Keep comparative income/cash flows, but never label December as June.
+    // The actual previous interim report supplies that period's balance.
+    for (const key of Object.keys(previous)) {
+      if (flowKeys.has(key) || key === 'metricSources') continue;
+      delete previous[key];
+      if (previous.metricSources) delete previous.metricSources[key];
+    }
+  }
   setPair(
     current,
     previous,
@@ -774,7 +965,10 @@ export async function extractFinancialReport(
       /^经营活动产生的现金流$/,
       /經營活動所得現金流量淨額/,
       /Net cash flows generated from operating activities/i,
+      /Net cash flows from operating activities/i,
       /Net cash generated from operating activities/i,
+      /Net cash flows used in operating activities/i,
+      /Net cash flows \(used in\)\/from operating activities/i,
     ]),
   );
   setPair(
@@ -786,6 +980,7 @@ export async function extractFinancialReport(
         pairFromMatch(cashFlow, [
           /购建固定资产/,
           /^Purchase of(?:\/prepayments?)? (?:for )?property, plant and equipment/i,
+          /^Purchases of items of property, plant and equipment\b/i,
         ]),
         pairFromMatch(cashFlow, [
           /^Purchase of(?:\/prepayments?)? for intangible assets/i,
@@ -821,13 +1016,22 @@ export async function extractFinancialReport(
       [...income, ...balance, ...cashFlow].map((page) => page.text).join('\n'),
     ),
     warnings,
+    ...(options.includeNarrative
+      ? {
+          narrativeEvidence: extractNarrativeEvidence(
+            narrativePages,
+            filing.id,
+          ),
+        }
+      : {}),
   };
 }
 
 export async function extractAnnualReport(
   bytes: Uint8Array,
   filing: OfficialFiling,
+  options: FinancialReportExtractionOptions = {},
 ): Promise<FinancialReportExtraction> {
   if (filing.reportKind !== 'annual') throw new Error('不是年度报告');
-  return extractFinancialReport(bytes, filing);
+  return extractFinancialReport(bytes, filing, options);
 }

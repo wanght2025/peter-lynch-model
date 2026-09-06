@@ -1,6 +1,5 @@
 import type {
   CompanyType,
-  MetricPoint,
   ProgramMetricSnapshot,
   RuleOutcome,
   RuleResult,
@@ -13,15 +12,12 @@ export const PROGRAM_RULE_IDS = [
   'LYN-08-INSIDER-BUYING',
   'LYN-08-BUYBACK',
   'LYN-09-CUSTOMER-CONCENTRATION',
-  'LYN-13-PE-HALF-DOUBLE',
-  'LYN-13-DIVIDEND-PEG',
   'LYN-13-NET-CASH',
   'LYN-13-BALANCE-SHEET',
   'LYN-13-PAYOUT-SAFETY',
   'LYN-13-FCF',
   'LYN-13-INVENTORY-SALES',
   'LYN-13-PRETAX-MARGIN',
-  'LYN-15-FAST-GROWTH-PREFERENCE',
   'LYN-10-PE-CONTEXT',
   'LYN-12-CASH-DEBT-TREND',
 ] as const;
@@ -42,6 +38,25 @@ export const AI_RULE_IDS = [
   'LYN-15-ASSET-PLAY',
   'LYN-10-AVOID-EXTREME-PE',
 ] as const;
+
+export const AI_SUPPLEMENT_RULE_IDS = [
+  'LYN-08-SPINOFF',
+  'LYN-08-LOW-INSTITUTIONAL',
+  'LYN-08-INSIDER-BUYING',
+  'LYN-08-BUYBACK',
+  'LYN-09-CUSTOMER-CONCENTRATION',
+  'LYN-13-PAYOUT-SAFETY',
+  'LYN-13-PRETAX-MARGIN',
+] as const;
+
+export const AI_ANALYSIS_RULE_IDS = [
+  ...AI_RULE_IDS,
+  ...AI_SUPPLEMENT_RULE_IDS,
+] as const;
+
+// Require a clear majority of applicable rules to have evidence, while avoiding
+// a brittle all-or-nothing result when one rule moves a 24-rule sample by 4.2%.
+export const MINIMUM_SCORE_COVERAGE = 0.55;
 
 function isKnownNumber(value: number | null | undefined): value is number {
   return typeof value === 'number' && Number.isFinite(value);
@@ -131,59 +146,6 @@ function evaluateProgramRule(
         ruleId,
         snapshot.majorCustomerDependency ? -1 : 0,
       );
-
-    case 'LYN-13-PE-HALF-DOUBLE': {
-      if (
-        snapshot.earningsPositive === false ||
-        !isKnownNumber(snapshot.peTtm)
-      ) {
-        return result(snapshot, ruleId, 'not_applicable', '亏损或市盈率不成立');
-      }
-      if (!isKnownNumber(snapshot.earningsCagr5yPercent)) {
-        return insufficient(snapshot, ruleId, '缺少5年收益复合增长率');
-      }
-      if (snapshot.earningsCagr5yPercent <= 0 || snapshot.peTtm <= 0) {
-        return result(
-          snapshot,
-          ruleId,
-          'not_applicable',
-          '收益增长率或市盈率不为正',
-        );
-      }
-      const ratio = snapshot.peTtm / snapshot.earningsCagr5yPercent;
-      return result(
-        snapshot,
-        ruleId,
-        ratio <= 0.5 ? 1 : ratio >= 2 ? -1 : 0,
-        `PE/5年收益增长率=${ratio.toFixed(2)}`,
-      );
-    }
-
-    case 'LYN-13-DIVIDEND-PEG': {
-      if (
-        snapshot.earningsPositive === false ||
-        !isKnownNumber(snapshot.peTtm) ||
-        snapshot.peTtm <= 0
-      ) {
-        return result(snapshot, ruleId, 'not_applicable', '亏损或市盈率不成立');
-      }
-      if (
-        !isKnownNumber(snapshot.earningsCagr5yPercent) ||
-        !isKnownNumber(snapshot.dividendYieldPercent)
-      ) {
-        return insufficient(snapshot, ruleId, '缺少增长率或股息率');
-      }
-      const ratio =
-        (snapshot.earningsCagr5yPercent + snapshot.dividendYieldPercent) /
-        snapshot.peTtm;
-      const label = ratio >= 2 ? '，达到书中“理想”标记' : '';
-      return result(
-        snapshot,
-        ruleId,
-        ratio >= 1.5 ? 1 : ratio < 1 ? -1 : 0,
-        `林奇估值比=${ratio.toFixed(2)}${label}`,
-      );
-    }
 
     case 'LYN-13-NET-CASH':
       if (
@@ -340,23 +302,6 @@ function evaluateProgramRule(
             : 0,
       );
 
-    case 'LYN-15-FAST-GROWTH-PREFERENCE':
-      if (!hasCompanyType(snapshot, ['fast_grower']))
-        return result(snapshot, ruleId, 'not_applicable', '非快速增长型');
-      if (!isKnownNumber(snapshot.earningsCagr5yPercent))
-        return insufficient(snapshot, ruleId, '缺少5年收益复合增长率');
-      return result(
-        snapshot,
-        ruleId,
-        snapshot.earningsCagr5yPercent >= 20 &&
-          snapshot.earningsCagr5yPercent <= 25
-          ? 1
-          : 0,
-        snapshot.earningsCagr5yPercent > 25
-          ? '高于25%，显示书中警告但本条不自动扣分'
-          : undefined,
-      );
-
     case 'LYN-10-PE-CONTEXT':
       if (
         snapshot.earningsPositive === false ||
@@ -451,13 +396,32 @@ export function calculateScore(
   const evidencedApplicableCount = applicable.length - insufficientCount;
   const applicableCount = applicable.length;
 
+  const coverage =
+    applicableCount === 0 ? null : evidencedApplicableCount / applicableCount;
+  const score =
+    evidencedApplicableCount === 0 || applicableCount === 0
+      ? null
+      : 50 + (50 * (positiveCount - riskCount)) / applicableCount;
+  const reliable =
+    score !== null &&
+    coverage !== null &&
+    coverage >= MINIMUM_SCORE_COVERAGE;
+  const decision = !reliable
+    ? ('insufficient' as const)
+    : score >= 80
+      ? ('strong' as const)
+      : score >= 65
+        ? ('promising' as const)
+        : score >= 50
+          ? ('mixed' as const)
+          : ('risk' as const);
+
   return {
-    score:
-      evidencedApplicableCount === 0
-        ? null
-        : 50 + (50 * (positiveCount - riskCount)) / evidencedApplicableCount,
-    coverage:
-      applicableCount === 0 ? null : evidencedApplicableCount / applicableCount,
+    score,
+    coverage,
+    decision,
+    reliable,
+    minimumCoverage: MINIMUM_SCORE_COVERAGE,
     positiveCount,
     riskCount,
     neutralCount,
@@ -468,6 +432,24 @@ export function calculateScore(
     includedRuleIds: included.map((item) => item.ruleId),
     pendingAiRuleIds,
   };
+}
+
+export function mergeRuleResults(
+  programResults: RuleResult[],
+  aiResults: RuleResult[],
+) {
+  const merged = new Map(programResults.map((item) => [item.ruleId, item]));
+  for (const aiResult of aiResults) {
+    const existing = merged.get(aiResult.ruleId);
+    if (
+      !existing ||
+      (existing.outcome === 'insufficient' &&
+        aiResult.outcome !== 'insufficient')
+    ) {
+      merged.set(aiResult.ruleId, aiResult);
+    }
+  }
+  return [...merged.values()];
 }
 
 export function calculateCagr(
@@ -485,88 +467,4 @@ export function calculateCagr(
     return null;
   }
   return (Math.pow(endValue / startValue, 1 / years) - 1) * 100;
-}
-
-export function trailingTwelveMonths(
-  points: MetricPoint[],
-  metricId: string,
-): number | null {
-  const values = points.slice(-4).map((point) => point[metricId]);
-  if (
-    values.length !== 4 ||
-    values.some((value) => typeof value !== 'number' || !Number.isFinite(value))
-  ) {
-    return null;
-  }
-  return (values as number[]).reduce((sum, value) => sum + value, 0);
-}
-
-export function halfYearTrailingTwelveMonths(
-  latestHalf: number | null | undefined,
-  priorAnnual: number | null | undefined,
-  priorHalf: number | null | undefined,
-): number | null {
-  if (
-    !isKnownNumber(latestHalf) ||
-    !isKnownNumber(priorAnnual) ||
-    !isKnownNumber(priorHalf)
-  ) {
-    return null;
-  }
-  return latestHalf + priorAnnual - priorHalf;
-}
-
-function quarterOf(period: string): { year: string; quarter: number } | null {
-  const named = period.match(/^(\d{4})[-/]?Q([1-4])$/i);
-  if (named) return { year: named[1], quarter: Number(named[2]) };
-  const dated = period.match(/^(\d{4})-(03-31|06-30|09-30|12-31)$/);
-  if (!dated) return null;
-  const quarterByDate: Record<string, number> = {
-    '03-31': 1,
-    '06-30': 2,
-    '09-30': 3,
-    '12-31': 4,
-  };
-  return { year: dated[1], quarter: quarterByDate[dated[2]] };
-}
-
-export function cumulativeToSingleQuarter(
-  cumulativePoints: MetricPoint[],
-  additiveMetricIds: string[],
-): MetricPoint[] {
-  const sorted = [...cumulativePoints].sort((a, b) =>
-    a.period.localeCompare(b.period),
-  );
-  const priorByYear = new Map<string, MetricPoint>();
-
-  return sorted.map((point) => {
-    const parsed = quarterOf(point.period);
-    if (!parsed) return { ...point };
-    const prior = priorByYear.get(parsed.year);
-    const single: MetricPoint = { ...point };
-    for (const metricId of additiveMetricIds) {
-      const currentValue = point[metricId];
-      if (typeof currentValue !== 'number') continue;
-      if (parsed.quarter === 1) {
-        single[metricId] = currentValue;
-        continue;
-      }
-      const priorValue = prior?.[metricId];
-      single[metricId] =
-        typeof priorValue === 'number' ? currentValue - priorValue : undefined;
-    }
-    priorByYear.set(parsed.year, point);
-    return single;
-  });
-}
-
-export function classifyFinancialCompany(industry: string): boolean {
-  return /(银行|保险|证券|券商|多元金融|信托|期货)/.test(industry);
-}
-
-export function isRankEligible(
-  isFinancialCompany: boolean,
-  companyType: CompanyType,
-): boolean {
-  return !isFinancialCompany && companyType !== 'unclassified';
 }

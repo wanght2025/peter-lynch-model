@@ -105,20 +105,20 @@ const programRules = scoringRules.filter(
 const aiRules = scoringRules.filter((rule) => rule.evaluator === 'ai');
 
 check(
-  scoringRules.length === 30,
-  `用于评分应为30条，实际${scoringRules.length}条`,
+  scoringRules.length === 27,
+  `用于评分应为27条，实际${scoringRules.length}条`,
 );
 check(
   reminderRules.length === 13,
   `只做提醒应为13条，实际${reminderRules.length}条`,
 );
 check(
-  excludedRules.length === 10,
-  `不采用应为10条，实际${excludedRules.length}条`,
+  excludedRules.length === 13,
+  `不采用应为13条，实际${excludedRules.length}条`,
 );
 check(
-  programRules.length === 16,
-  `程序规则应为16条，实际${programRules.length}条`,
+  programRules.length === 13,
+  `程序规则应为13条，实际${programRules.length}条`,
 );
 check(aiRules.length === 14, `AI规则应为14条，实际${aiRules.length}条`);
 check(
@@ -153,6 +153,10 @@ check(
   '全正向应为100分',
 );
 check(score({ positive: 0, risk: 10, applicable: 10 }) === 0, '全风险应为0分');
+check(
+  score({ positive: 1, risk: 0, applicable: 27 }) < 55,
+  '一条正向而其余证据不足时不得接近满分',
+);
 
 if (failures.length) {
   console.error(`规则库校验失败（${failures.length}项）：`);
@@ -165,6 +169,6 @@ console.log(
   `53条：评分${scoringRules.length} / 提醒${reminderRules.length} / 不采用${excludedRules.length}`,
 );
 console.log(
-  `评分阶段：程序${programRules.length} / AI+人工确认${aiRules.length}`,
+  `评分阶段：程序${programRules.length} / AI+来源校验${aiRules.length}`,
 );
 console.log(`书籍SHA-256：${catalog.source.sourceFileSha256}`);

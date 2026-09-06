@@ -21,7 +21,8 @@ const MAX_PDF_BYTES = 30 * 1024 * 1024;
 const ADDITIVE_METRICS = [
   'revenue',
   'netProfit',
-  'eps',
+  'grossProfit',
+  'operatingProfit',
   'pretaxProfit',
   'operatingCashFlow',
   'capitalExpenditure',
@@ -47,6 +48,8 @@ const POINT_IN_TIME_METRICS = [
   'netCash',
   'netCashPerShare',
   'inventory',
+  'tradeReceivables',
+  'tradePayables',
   'sharesOutstanding',
   'totalAssets',
   'totalLiabilities',
@@ -61,7 +64,7 @@ type Download = {
   error: string | null;
 };
 
-function selectAnnualPairs(reports: OfficialFiling[]) {
+function selectAnnualPairs(reports: OfficialFiling[], includeBoundary = false) {
   const coveredYears = new Set<number>();
   const selected: OfficialFiling[] = [];
   for (const report of reports
@@ -74,6 +77,18 @@ function selectAnnualPairs(reports: OfficialFiling[]) {
     coveredYears.add(year - 1);
     if (selected.length === 5) break;
   }
+  if (includeBoundary && selected.length < 5) {
+    for (const report of reports.filter(
+      (item) => item.reportKind === 'annual' && item.fiscalYear,
+    )) {
+      const year = report.fiscalYear!;
+      if (coveredYears.has(year) && coveredYears.has(year - 1)) continue;
+      selected.push(report);
+      coveredYears.add(year);
+      coveredYears.add(year - 1);
+      if (selected.length === 5) break;
+    }
+  }
   return selected;
 }
 
@@ -83,7 +98,7 @@ function selectInterimReports(lookup: OfficialLookup) {
       (report) =>
         report.fiscalYear &&
         (lookup.company.market === 'HK'
-          ? report.reportKind === 'half_year'
+          ? ['q1', 'half_year', 'q3', 'quarterly'].includes(report.reportKind)
           : ['q1', 'half_year', 'q3'].includes(report.reportKind)),
     )
     .sort((a, b) => (b.fiscalYear ?? 0) - (a.fiscalYear ?? 0));
@@ -104,14 +119,25 @@ function selectInterimReports(lookup: OfficialLookup) {
     });
   }
 
-  const coveredYears = new Set<number>();
-  return reports.filter((report) => {
-    const year = report.fiscalYear as number;
-    if (coveredYears.has(year) || coveredYears.has(year - 1)) return false;
-    coveredYears.add(year);
-    coveredYears.add(year - 1);
-    return coveredYears.size <= 10;
-  });
+  // Use quarterly filings when there are enough inputs to reconstruct
+  // consecutive single quarters; retain half-year filings as the fallback
+  // and for balance-sheet comparison.
+  const quarterly = reports.filter((report) =>
+    ['q1', 'q3', 'quarterly'].includes(report.reportKind),
+  );
+  const halfYear = reports.filter(
+    (report) => report.reportKind === 'half_year',
+  );
+  return [...quarterly.slice(0, 12), ...halfYear.slice(0, 10)];
+}
+
+function latestReport(reports: OfficialFiling[]) {
+  return [...reports].sort((a, b) => {
+    const dateDifference = Date.parse(b.date) - Date.parse(a.date);
+    if (Number.isFinite(dateDifference) && dateDifference !== 0)
+      return dateDifference;
+    return (b.fiscalYear ?? 0) - (a.fiscalYear ?? 0);
+  })[0];
 }
 
 async function sha256(bytes: Uint8Array) {
@@ -127,6 +153,9 @@ async function sha256(bytes: Uint8Array) {
 }
 
 async function fetchPdfOnce(report: OfficialFiling) {
+  const maxBytes = /^\d{5}$/.test(report.code)
+    ? 40 * 1024 * 1024
+    : MAX_PDF_BYTES;
   const url = report.extractionUrl ?? report.url;
   const response = await fetch(url, {
     headers: {
@@ -142,9 +171,11 @@ async function fetchPdfOnce(report: OfficialFiling) {
   });
   if (!response.ok) throw new Error(`PDF下载失败：${response.status}`);
   const declaredSize = Number(response.headers.get('content-length'));
-  if (declaredSize > MAX_PDF_BYTES) throw new Error('PDF超过30MB安全上限');
+  if (declaredSize > maxBytes)
+    throw new Error(`PDF超过${maxBytes / 1024 / 1024}MB安全上限`);
   const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > MAX_PDF_BYTES) throw new Error('PDF超过30MB安全上限');
+  if (bytes.byteLength > maxBytes)
+    throw new Error(`PDF超过${maxBytes / 1024 / 1024}MB安全上限`);
   if (new TextDecoder().decode(bytes.slice(0, 4)) !== '%PDF')
     throw new Error('官方链接没有返回PDF文件');
   return bytes;
@@ -303,6 +334,18 @@ function toAShareSingleQuarters(
   return quarters.sort((a, b) => a.period.localeCompare(b.period)).slice(-12);
 }
 
+function hasConsecutiveQuarters(points: MetricPoint[]) {
+  const index = (period: string) => {
+    const match = period.match(/^(\d{4})Q([1-4])$/);
+    return match ? Number(match[1]) * 4 + Number(match[2]) : null;
+  };
+  return points.some((point, position) => {
+    const current = index(point.period);
+    const next = index(points[position + 1]?.period ?? '');
+    return current !== null && next === current + 1;
+  });
+}
+
 function sumTtm(period: string, points: MetricPoint[], balance: MetricPoint) {
   const result: MetricPoint = {
     period: `${period} TTM`,
@@ -341,8 +384,10 @@ function latestAShareComparable(quarters: MetricPoint[]) {
 
 function latestHkComparable(annual: MetricPoint[], halfYear: MetricPoint[]) {
   const latest = halfYear.at(-1);
+  const latestAnnual = annual.at(-1);
   if (!latest) return undefined;
   const year = Number(latest.period.slice(0, 4));
+  if (Number(latestAnnual?.period) >= year) return undefined;
   const priorAnnual = annual.find((point) => point.period === String(year - 1));
   const priorHalf = halfYear.find((point) => point.period === `${year - 1}H1`);
   if (!priorAnnual || !priorHalf) return undefined;
@@ -383,19 +428,25 @@ function latestHkComparable(annual: MetricPoint[], halfYear: MetricPoint[]) {
 export async function buildAnnualDataset(
   lookup: OfficialLookup,
 ): Promise<FundamentalsResponse> {
-  const annualReports = selectAnnualPairs(lookup.reports);
+  const annualReports = selectAnnualPairs(
+    lookup.reports,
+    lookup.company.market === 'HK',
+  );
   const interimReports = selectInterimReports(lookup);
   const selected = [...annualReports, ...interimReports];
-  const downloads = await downloadReports(
-    selected,
-    lookup.company.market === 'HK' ? 5 : 2,
+  const narrativeReportIds = new Set(
+    [latestReport(annualReports), latestReport(interimReports)]
+      .filter((report): report is OfficialFiling => Boolean(report))
+      .map((report) => report.id),
   );
+  const downloads = await downloadReports(selected, 2);
   const annualPoints = new Map<string, MetricPoint>();
   const interimPoints = new Map<string, MetricPoint>();
   const reportRefs: ReportReference[] = [];
   const statuses: FundamentalsResponse['extraction']['reports'] = [];
   const warnings: string[] = [];
   const currencies: string[] = [];
+  const narrativeEvidence = [] as NonNullable<AnalysisDataset['narrativeEvidence']>;
 
   for (const download of downloads) {
     if (!download.bytes) {
@@ -413,19 +464,34 @@ export async function buildAnnualDataset(
       const hash = await sha256(download.bytes);
       const extraction =
         download.report.reportKind === 'annual'
-          ? await extractAnnualReport(download.bytes, download.report)
-          : await extractFinancialReport(download.bytes, download.report);
+          ? await extractAnnualReport(download.bytes, download.report, {
+              includeNarrative: narrativeReportIds.has(download.report.id),
+            })
+          : await extractFinancialReport(download.bytes, download.report, {
+              includeNarrative: narrativeReportIds.has(download.report.id),
+            });
       currencies.push(extraction.financialCurrency);
       reportRefs.push(reportReference(lookup, download.report, hash));
-      if (download.report.reportKind === 'annual') {
-        for (const point of extraction.points.filter(hasFinancialData)) {
-          if (!annualPoints.has(point.period))
-            annualPoints.set(point.period, point);
+      narrativeEvidence.push(...(extraction.narrativeEvidence ?? []));
+      const targetPoints =
+        download.report.reportKind === 'annual' ? annualPoints : interimPoints;
+      for (const point of extraction.points.filter(hasFinancialData)) {
+        const existing = targetPoints.get(point.period);
+        if (!existing) {
+          targetPoints.set(point.period, point);
+          continue;
         }
-      } else {
-        for (const point of extraction.points.filter(hasFinancialData)) {
-          if (!interimPoints.has(point.period))
-            interimPoints.set(point.period, point);
+        // Prefer newer comparative/restated flows, filling only missing fields
+        // from the report for this exact period (especially interim balances).
+        for (const [key, value] of Object.entries(point)) {
+          if (typeof value !== 'number' || typeof existing[key] === 'number')
+            continue;
+          existing[key] = value;
+          existing.reportRefIds = mergeReportIds(existing, point);
+          if (point.metricSources?.[key]) {
+            existing.metricSources ??= {};
+            existing.metricSources[key] = point.metricSources[key];
+          }
         }
       }
       warnings.push(
@@ -460,16 +526,19 @@ export async function buildAnnualDataset(
   const cumulativeInterim = [...interimPoints.values()].sort((a, b) =>
     a.period.localeCompare(b.period),
   );
-  const halfYear =
-    lookup.company.market === 'HK'
-      ? cumulativeInterim
-          .filter((point) => point.period.includes('H1'))
-          .slice(-10)
-      : [];
+  const reconstructedQuarters = toAShareSingleQuarters(
+    annual,
+    cumulativeInterim,
+  );
+  const halfYear = cumulativeInterim
+    .filter((point) => point.period.includes('H1'))
+    .slice(-10);
   const quarterly =
     lookup.company.market === 'A_SHARE'
-      ? toAShareSingleQuarters(annual, cumulativeInterim)
-      : [];
+      ? reconstructedQuarters
+      : hasConsecutiveQuarters(reconstructedQuarters)
+        ? reconstructedQuarters
+        : [];
   const latestComparablePoint =
     lookup.company.market === 'HK'
       ? latestHkComparable(annual, halfYear)
@@ -484,20 +553,39 @@ export async function buildAnnualDataset(
   let currentMarket: AnalysisDataset['currentMarket'];
   if (annual.length) {
     const marketResults = await Promise.allSettled([
-      attachAnnualPrices(lookup.company, annual),
       fetchCurrentMarket(lookup.company),
+      attachAnnualPrices(
+        lookup.company,
+        annual,
+        halfYear,
+        currencies[0] === 'CNY' || currencies[0] === 'HKD'
+          ? currencies[0]
+          : lookup.company.currency,
+      ),
     ]);
     if (marketResults[0].status === 'fulfilled')
-      priceResult = marketResults[0].value;
-    else warnings.push(`历史行情获取失败：${marketResults[0].reason}`);
+      currentMarket = marketResults[0].value;
+    else {
+      warnings.push(
+        `当前行情获取失败：${marketResults[0].reason instanceof Error ? marketResults[0].reason.message : '未知错误'}`,
+      );
+    }
     if (marketResults[1].status === 'fulfilled')
-      currentMarket = marketResults[1].value;
-    else warnings.push(`当前行情获取失败：${marketResults[1].reason}`);
+      priceResult = marketResults[1].value;
+    else {
+      warnings.push(
+        `历史行情获取失败：${marketResults[1].reason instanceof Error ? marketResults[1].reason.message : '未知错误'}`,
+      );
+    }
     warnings.push(...priceResult.warnings);
   }
 
+  const latestReportPoint =
+    lookup.company.market === 'HK' && quarterly.length >= 2
+      ? quarterly.at(-1)
+      : latestComparablePoint;
   const latestReportPeriod =
-    latestComparablePoint?.period.replace(/ TTM$/, '') ?? annual.at(-1)?.period;
+    latestReportPoint?.period.replace(/ TTM$/, '') ?? annual.at(-1)?.period;
   const dataset: AnalysisDataset | null = annual.length
     ? {
         security: lookup.company,
@@ -519,13 +607,16 @@ export async function buildAnnualDataset(
         latestReportPeriod,
         latestComparablePoint,
         reportRefs,
+        narrativeEvidence: narrativeEvidence.length
+          ? narrativeEvidence
+          : undefined,
         ruleVersion: 'rules.verified.v1',
-        metricVersion: 'official-periodic-pdf-market.v4',
+        metricVersion: 'official-periodic-pdf-market.v6',
         generatedAt: new Date().toISOString(),
       }
     : null;
 
-  const audit = auditAnnualData(annual, reportRefs);
+  const audit = auditAnnualData(annual, reportRefs, [...halfYear, ...quarterly]);
   warnings.push(...audit.warnings);
   const latestBalancePoint = latestComparablePoint ?? annual.at(-1);
   if (/货币资金/.test(latestBalancePoint?.metricSources?.cash?.label ?? ''))

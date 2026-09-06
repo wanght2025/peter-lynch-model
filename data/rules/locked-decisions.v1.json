@@ -5,10 +5,10 @@
   "sourceRef": "lynch-cn-2018-9787111590736",
   "disclosure": "规则方向来自锁定书籍；等权、阶段划分、程序口径和汇总分数均为本模型设置，不是彼得·林奇原著评分公式。",
   "counts": {
-    "scoring": 30,
+    "scoring": 27,
     "reminder": 13,
-    "excluded": 10,
-    "program": 16,
+    "excluded": 13,
+    "program": 13,
     "ai": 14
   },
   "scoringPolicy": {
@@ -19,16 +19,16 @@
       "所有适用规则等权，每条最多正负1分",
       "不适用不进入分母",
       "证据不足不算通过，覆盖率单列",
-      "第一阶段只计算16条程序规则",
-      "第二阶段14条AI规则必须经用户确认后才进入正式总分",
-      "AI只能整理证据和建议，不能批准规则或修改分值"
+      "第一阶段只计算13条程序规则",
+      "第二阶段14条AI规则只有在证据来源通过系统校验后才进入正式总分",
+      "AI只能按锁定规则整理证据和判断，不能修改规则或分值"
     ]
   },
   "dataPolicy": {
     "annualYears": 10,
     "quarterlyPeriods": 12,
-    "primaryGrowthYears": 5,
-    "referenceGrowthYears": [3, 10],
+    "primaryGrowthYears": null,
+    "referenceGrowthYears": [],
     "financialCompaniesRanked": false
   },
   "programRules": [
@@ -80,30 +80,6 @@
       "risk": "公司明确披露对单一或少数大客户存在重大依赖",
       "neutral": "未出现重大依赖的明确证据",
       "thresholdSource": "no_numeric_threshold"
-    },
-    {
-      "id": "LYN-13-PE-HALF-DOUBLE",
-      "metricIds": ["valuation.pe_ttm", "growth.earnings_cagr_5y"],
-      "formula": "pe_ttm / earnings_cagr_5y_percent",
-      "positive": "结果不高于0.5",
-      "risk": "结果不低于2",
-      "neutral": "结果大于0.5且小于2",
-      "notApplicable": "净利润或增长率不为正，无法使用市盈率或该比率",
-      "thresholdSource": "book_numeric"
-    },
-    {
-      "id": "LYN-13-DIVIDEND-PEG",
-      "metricIds": [
-        "valuation.pe_ttm",
-        "growth.earnings_cagr_5y",
-        "dividend.yield"
-      ],
-      "formula": "(earnings_cagr_5y_percent + dividend_yield_percent) / pe_ttm",
-      "positive": "结果不低于1.5；不低于2另标记为理想",
-      "risk": "结果低于1",
-      "neutral": "结果不低于1且低于1.5",
-      "notApplicable": "市盈率、增长率或股息率无法可靠取得",
-      "thresholdSource": "book_numeric"
     },
     {
       "id": "LYN-13-NET-CASH",
@@ -166,16 +142,6 @@
       "thresholdSource": "no_numeric_threshold"
     },
     {
-      "id": "LYN-15-FAST-GROWTH-PREFERENCE",
-      "metricIds": ["growth.earnings_cagr_5y"],
-      "formula": "以最近5个完整年度收益计算复合增长率，同时展示3年与10年",
-      "positive": "快速增长型5年收益复合增长率为20%至25%",
-      "risk": "高于25%显示林奇警告，但不自动扣分",
-      "neutral": "低于20%或公司不属于快速增长型",
-      "notApplicable": "非快速增长型",
-      "thresholdSource": "book_numeric"
-    },
-    {
       "id": "LYN-10-PE-CONTEXT",
       "metricIds": [
         "valuation.pe_ttm",
@@ -231,6 +197,9 @@
     "LYN-16-HOLD-WHILE-STORY-HOLDS"
   ],
   "excludedRules": [
+    "LYN-13-PE-HALF-DOUBLE",
+    "LYN-13-DIVIDEND-PEG",
+    "LYN-15-FAST-GROWTH-PREFERENCE",
     "LYN-04-AFFORD-LOSS",
     "LYN-05-NO-MARKET-FORECAST",
     "LYN-06-OBSERVATION-NOT-BUY",

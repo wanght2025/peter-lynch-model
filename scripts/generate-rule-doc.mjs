@@ -16,7 +16,7 @@ const decisionLabel = {
 };
 const evaluatorLabel = {
   program: '程序计算',
-  ai: 'AI整理证据＋用户确认',
+  ai: 'AI整理证据＋来源校验',
   none: '不执行',
 };
 const scopeLabel = {
@@ -45,7 +45,7 @@ line(
   `规则总数：${catalog.rules.length}条；用于评分${catalog.counts.scoring}条，只做提醒${catalog.counts.reminder}条，不采用${catalog.counts.excluded}条。  `,
 );
 line(
-  `评分规则：程序计算${catalog.counts.program}条，AI整理证据＋用户确认${catalog.counts.ai}条。`,
+  `评分规则：程序计算${catalog.counts.program}条，AI整理证据＋来源校验${catalog.counts.ai}条。`,
 );
 line();
 line('## 一、唯一书籍来源');

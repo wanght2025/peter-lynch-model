@@ -51,13 +51,30 @@ export function normalizeSecurityCode(input: unknown): {
   code: string;
 } | null {
   if (typeof input !== 'string' && typeof input !== 'number') return null;
-  const cleaned = input
-    .toString()
-    .trim()
-    .toUpperCase()
+  const text = input.toString().trim().toUpperCase();
+  const prefix = text.match(/^(SH|SZ|BJ|HK)[:.\s-]*/)?.[1];
+  const suffix = text.match(/\.(HK|SH|SZ|BJ)$/)?.[1];
+  if (prefix && suffix && prefix !== suffix) return null;
+  const marketHint = prefix ?? suffix;
+  const cleaned = text
     .replace(/^(SH|SZ|BJ|HK)[:.\s-]*/, '')
-    .replace(/\D/g, '');
-  if (/^\d{4,5}$/.test(cleaned))
+    .replace(/\.(HK|SH|SZ|BJ)$/, '');
+  if (!/^\d+$/.test(cleaned)) return null;
+  // Canonical identity: market + five-digit HK code; provider prefixes stay
+  // in the provider adapters. Six-digit zero-padded HK input is accepted.
+  if (
+    marketHint === 'HK' ||
+    (!marketHint && /^0(?:0[4-9]|[1-9]\d)\d{3}$/.test(cleaned))
+  ) {
+    if (
+      !/^\d{1,6}$/.test(cleaned) ||
+      Number(cleaned) < 1 ||
+      Number(cleaned) > 99999
+    )
+      return null;
+    return { market: 'HK', code: String(Number(cleaned)).padStart(5, '0') };
+  }
+  if (!marketHint && /^\d{1,5}$/.test(cleaned) && Number(cleaned) > 0)
     return { market: 'HK', code: cleaned.padStart(5, '0') };
   if (/^\d{6}$/.test(cleaned)) return { market: 'A_SHARE', code: cleaned };
   return null;
@@ -71,7 +88,7 @@ export function reportingPolicyFor(market: SecurityMarket): ReportingPolicy {
       halfYearTarget: 10,
       quarterlyAvailability: 'actual_only',
       ttmMethod: 'latest_half_plus_prior_annual_minus_prior_half',
-      note: '港股使用10个完整年度和10个半年期；只保留公司实际披露的季度数据。',
+      note: '港股使用10个完整年度；有连续可比季度时按季度，否则按实际披露的半年期。',
     };
   }
   return {
@@ -85,7 +102,10 @@ export function reportingPolicyFor(market: SecurityMarket): ReportingPolicy {
 }
 
 export function filingCoverage(reports: OfficialFiling[]) {
-  const dates = reports.map((report) => report.date).filter(Boolean).sort();
+  const dates = reports
+    .map((report) => report.date)
+    .filter(Boolean)
+    .sort();
   return {
     annual: reports.filter((report) => report.reportKind === 'annual').length,
     halfYear: reports.filter((report) => report.reportKind === 'half_year')

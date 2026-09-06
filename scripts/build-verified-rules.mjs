@@ -32,7 +32,7 @@ const rules = candidates.rules.map((candidate, index) => {
     evaluator = 'ai';
     scoreSpec = {
       formula:
-        'AI只从法定披露中整理与原文方向相关的证据，给出+1/0/-1/不适用/证据不足建议；用户确认后才能计分',
+        'AI只从法定披露中整理与原文方向相关的证据，给出+1/0/-1/不适用/证据不足判断；只有通过来源校验的证据才能计分',
       positive:
         candidate.signal === 'risk' || candidate.signal === 'critical'
           ? null

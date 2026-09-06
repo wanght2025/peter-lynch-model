@@ -13,6 +13,7 @@
     "rules:docs": "node scripts/generate-rule-doc.mjs",
     "rules:sync": "node scripts/build-verified-rules.mjs && node scripts/generate-rule-doc.mjs && node scripts/validate-rules.mjs",
     "rules:validate": "node scripts/validate-rules.mjs",
+    "smoke:ai": "node scripts/smoke-ai-analysis.mjs",
     "lint": "oxlint",
     "format": "oxfmt"
   },

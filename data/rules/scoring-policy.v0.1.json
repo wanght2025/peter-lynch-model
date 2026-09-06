@@ -11,7 +11,7 @@
     "not_applicable": null,
     "insufficient": null
   },
-  "formula": "50 + 50 * (positiveCount - riskCount) / evidencedApplicableCount",
+  "formula": "50 + 50 * (positiveCount - riskCount) / applicableCount",
   "coverageFormula": "evidencedApplicableCount / applicableCount",
   "rules": [
     "只加载status=verified且scoreEligible=true的规则",
