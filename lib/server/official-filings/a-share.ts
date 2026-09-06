@@ -9,6 +9,8 @@ import {
 } from '@/lib/official-filings';
 
 const CNINFO_BASE = 'https://www.cninfo.com.cn';
+const SSE_BASE = 'https://www.sse.com.cn';
+const SSE_QUERY_BASE = 'https://query.sse.com.cn';
 
 type CninfoSecurity = {
   code?: string | number;
@@ -26,6 +28,14 @@ type CninfoAnnouncement = {
   secCode?: string;
   secName?: string;
   adjunctType?: string;
+};
+
+type SseBulletin = {
+  SECURITY_CODE?: string;
+  SECURITY_NAME?: string;
+  SSEDATE?: string;
+  TITLE?: string;
+  URL?: string;
 };
 
 function marketColumn(code: string) {
@@ -99,7 +109,7 @@ function formatDate(timestamp?: number) {
   return new Date(timestamp).toISOString().slice(0, 10);
 }
 
-export async function lookupAShare(code: string): Promise<OfficialLookup> {
+async function lookupCninfoAShare(code: string): Promise<OfficialLookup> {
   const securityResponse = await fetch(
     `${CNINFO_BASE}/new/information/topSearch/detailOfQuery`,
     {
@@ -259,4 +269,127 @@ export async function lookupAShare(code: string): Promise<OfficialLookup> {
     },
     warnings,
   };
+}
+
+async function lookupSseAShare(
+  code: string,
+  primaryError: unknown,
+): Promise<OfficialLookup> {
+  const reportTypes = ['YEARLY', 'QUATER1', 'QUATER2', 'QUATER3'];
+  const responses = await Promise.all(
+    reportTypes.map(async (reportType) => {
+      const params = new URLSearchParams({
+        isPagination: 'true',
+        productId: code,
+        keyWord: '',
+        securityType: '0101,120100,020100,020200,120200',
+        reportType2: 'DQBG',
+        reportType,
+        'pageHelp.pageSize': '100',
+        'pageHelp.pageCount': '1',
+        'pageHelp.pageNo': '1',
+        'pageHelp.beginPage': '1',
+        'pageHelp.endPage': '1',
+      });
+      const response = await fetch(
+        `${SSE_QUERY_BASE}/security/stock/queryCompanyBulletin.do?${params}`,
+        {
+          headers: {
+            Accept: 'application/json, text/plain, */*',
+            Referer: `${SSE_BASE}/assortment/stock/list/info/announcement/`,
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36',
+          },
+        },
+      );
+      if (!response.ok)
+        throw new Error(`上交所公告查询失败：${response.status}`);
+      const payload = (await response.json()) as {
+        pageHelp?: { data?: SseBulletin[] };
+      };
+      return payload.pageHelp?.data ?? [];
+    }),
+  );
+  const seen = new Set<string>();
+  const reports = selectReportPeriods(
+    responses
+      .flat()
+      .map((item): OfficialFiling | null => {
+        const title = item.TITLE?.trim() ?? '';
+        const kind = reportKind(title);
+        const urlPath = item.URL?.trim() ?? '';
+        if (
+          !kind ||
+          !urlPath ||
+          /摘要/.test(title) ||
+          seen.has(urlPath)
+        )
+          return null;
+        seen.add(urlPath);
+        return {
+          id: urlPath,
+          code: item.SECURITY_CODE ?? code,
+          companyName: item.SECURITY_NAME ?? code,
+          title,
+          date: item.SSEDATE ?? '',
+          fileType: 'PDF',
+          url: `${SSE_BASE}${urlPath.startsWith('/') ? '' : '/'}${urlPath}`,
+          sourceName: '上海证券交易所法定披露平台',
+          reportKind: kind,
+          fiscalYear: Number(title.match(/(20\d{2})/)?.[1]) || undefined,
+          language: languageOf(title),
+          isCorrection: /(更正|修订|更新)/.test(title),
+          isSummary: false,
+        };
+      })
+      .filter((item): item is OfficialFiling => item !== null),
+  );
+  if (!reports.length) {
+    const primaryMessage =
+      primaryError instanceof Error ? primaryError.message : '未知错误';
+    throw new Error(`巨潮查询失败且上交所无可用报告：${primaryMessage}`);
+  }
+  const companyName = reports[0].companyName;
+  const isFinancialCompany = financialCompanyByName(companyName);
+  const coverage = filingCoverage(reports);
+  const warnings = [
+    '巨潮查询暂不可用，本次改用上海证券交易所法定披露平台。',
+  ];
+  if (coverage.annual < 10)
+    warnings.push(`只有${coverage.annual}个可用完整年度；上市不足10年的公司使用全部可用年度。`);
+  const interimInputs = coverage.halfYear + coverage.quarterly;
+  if (interimInputs < 12)
+    warnings.push(`只有${interimInputs}个中期报告输入，可能不足以还原最近12个单季度。`);
+  return {
+    company: {
+      market: 'A_SHARE',
+      exchange: 'SSE',
+      code,
+      displayCode: code,
+      companyName,
+      issuerId: code,
+      currency: 'CNY',
+      ahPairCode: ahPairCode(code),
+      isFinancialCompany,
+      rankEligible: !isFinancialCompany,
+    },
+    reports,
+    coverage,
+    reportingPolicy: reportingPolicyFor('A_SHARE'),
+    source: {
+      name: '上海证券交易所法定披露平台',
+      url: `${SSE_BASE}/assortment/stock/list/info/announcement/index.shtml?productId=${code}`,
+      retrievedAt: new Date().toISOString(),
+    },
+    warnings,
+  };
+}
+
+export async function lookupAShare(code: string): Promise<OfficialLookup> {
+  try {
+    return await lookupCninfoAShare(code);
+  } catch (error) {
+    if (exchangeFor(code) !== 'SSE') throw error;
+    return lookupSseAShare(code, error);
+  }
 }
